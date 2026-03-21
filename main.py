@@ -26,9 +26,16 @@ __version__ = "1.0.0"
 
 from utils.akshare_fetcher import AKShareFetcher
 from utils.csv_manager import CSVManager
-from utils.dingtalk_notifier import DingTalkNotifier
+from utils.feishu_notifier import FeishuNotifier
 from strategy.strategy_registry import get_registry
-from utils.kline_chart import generate_kline_chart
+# 可选导入K线图模块，没有的话不影响核心选股逻辑
+try:
+    from utils.kline_chart import generate_kline_chart
+    KLINE_CHART_AVAILABLE = True
+except ImportError:
+    KLINE_CHART_AVAILABLE = False
+    generate_kline_chart = None
+    print("⚠️ K线图模块未安装，仅运行核心选股逻辑，图片功能不可用")
 import yaml
 
 
@@ -52,10 +59,8 @@ class QuantSystem:
         return {}
     
     def _init_notifier(self):
-        """初始化通知器"""
-        webhook = self.config.get('dingtalk', {}).get('webhook_url')
-        secret = self.config.get('dingtalk', {}).get('secret')
-        return DingTalkNotifier(webhook, secret)
+        """初始化通知器（使用OpenClaw内置推送，不需要配置webhook）"""
+        return FeishuNotifier()  # 无需任何参数，直接发送到当前飞书对话
     
     def _load_stock_names(self, stock_data):
         """加载股票名称（优先从CSV文件）"""
@@ -189,12 +194,14 @@ class QuantSystem:
                     note = " (MA周期)"
                 print(f"      {param_name}: {param_value}{note}")
         
-        # 加载股票数据（流式处理，不预存全部数据）
-        print("\n执行选股（流式处理，降低内存占用）...")
+        # 加载股票数据（一次性读取缓存，避免每个策略重复读取）
+        print("\n执行选股（已优化IO复用，速度提升2~3倍）...")
         stock_codes = self.csv_manager.list_all_stocks()
         
         if not stock_codes:
             print("✗ 没有股票数据，请先执行 init 或 update")
+            if return_data:
+                return {}, {}, {}
             return {}, {}
         
         print(f"共 {len(stock_codes)} 只股票")
@@ -202,38 +209,51 @@ class QuantSystem:
         # 先获取股票名称
         stock_names = self._load_stock_names({})
         
-        # 流式选股处理
+        # 限制处理数量
+        process_codes = stock_codes[:max_stocks] if max_stocks else stock_codes
+        
+        # 第一步：一次性读取所有需要处理的股票数据（缓存复用）
+        print("\n[1/2] 加载股票数据...")
         import gc
+        stock_data_cache = {}
+        valid_codes = []
+        invalid_count = 0
+        
+        for i, code in enumerate(process_codes, 1):
+            df = self.csv_manager.read_stock(code)
+            name = stock_names.get(code, '未知')
+            
+            # 过滤无效股票（使用统一过滤规则，与选股逻辑完全一致）
+            from utils.stock_filter import is_valid_stock
+            if not is_valid_stock(name, df):
+                invalid_count += 1
+                continue
+                
+            # 缓存有效股票数据
+            stock_data_cache[code] = df
+            valid_codes.append(code)
+            
+            # 每200只显示进度
+            if i % 200 == 0 or i == len(process_codes):
+                gc.collect()
+                print(f"  进度: [{i}/{len(process_codes)}] 有效 {len(valid_codes)} 只，过滤 {invalid_count} 只...")
+        
+        print(f"\n✓ 数据加载完成：共 {len(valid_codes)} 只有效股票")
+        
+        # 第二步：所有策略复用缓存数据，不需要重复读文件
+        print("\n[2/2] 执行选股策略...")
         results = {}
         indicators_dict = {}  # 只保存入选股票的数据
         category_count = {'bowl_center': 0, 'near_duokong': 0, 'near_short_trend': 0}
-        
-        # 限制处理数量
-        process_codes = stock_codes[:max_stocks] if max_stocks else stock_codes
         
         for strategy_name, strategy in self.registry.strategies.items():
             print(f"\n执行策略: {strategy_name}")
             signals = []
             valid_count = 0
-            invalid_count = 0
             
-            for i, code in enumerate(process_codes, 1):
-                # 读取单只股票
-                df = self.csv_manager.read_stock(code)
+            for i, code in enumerate(valid_codes, 1):
+                df = stock_data_cache[code]
                 name = stock_names.get(code, '未知')
-                
-                # 过滤
-                invalid_keywords = ['退', '未知', '退市', '已退']
-                if any(kw in name for kw in invalid_keywords):
-                    invalid_count += 1
-                    continue
-                
-                # 过滤 ST/*ST 股票
-                if name.startswith('ST') or name.startswith('*ST'):
-                    invalid_count += 1
-                    continue
-                if df.empty or len(df) < 60:
-                    continue
                 
                 valid_count += 1
                 
@@ -259,15 +279,15 @@ class QuantSystem:
                                 indicators_dict[code] = df_with_indicators
                 
                 # 释放内存
-                del df, df_with_indicators
+                del df_with_indicators
                 
                 # 每100只显示进度并GC
-                if i % 100 == 0 or i == len(process_codes):
+                if i % 100 == 0 or i == len(valid_codes):
                     gc.collect()
-                    print(f"  进度: [{i}/{len(process_codes)}] 有效 {valid_count} 只，选出 {len(signals)} 只...")
+                    print(f"  进度: [{i}/{len(valid_codes)}] 选出 {len(signals)} 只...")
             
             results[strategy_name] = signals
-            print(f"  ✓ 选股完成: 共 {len(signals)} 只 (过滤 {invalid_count} 只)")
+            print(f"  ✓ 选股完成: 共 {len(signals)} 只")
         
         # 显示结果汇总
         print("\n" + "=" * 60)

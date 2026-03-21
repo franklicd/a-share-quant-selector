@@ -6,9 +6,15 @@
 
 data_dir: data
 
-dingtalk:
-  webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=cb0bd772e4da7eff45479556c0e0830f3108c277f6b220994f68e8caa83a0d65"
-  secret: "SECe65be9a58252b694eb98a525c64e667b277aa7e45d54d8633c5baa2386b0c4cf"
+# 飞书通知已内置OpenClaw推送能力，无需配置webhook/secret，直接发送到当前对话
+# feishu:
+#   webhook_url: "（已不需要配置）"
+#   secret: "（已不需要配置）"
+
+# 旧钉钉配置（已停用，保留作为参考）
+# dingtalk:
+#   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=cb0bd772e4da7eff45479556c0e0830f3108c277f6b220994f68e8caa83a0d65"
+#   secret: "SECe65be9a58252b694eb98a525c64e667b277aa7e45d54d8633c5baa2386b0c4cf"
 
 schedule:
   time: "17:00"

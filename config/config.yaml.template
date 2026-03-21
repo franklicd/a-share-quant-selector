@@ -3,18 +3,23 @@
 # ============================================
 # 使用说明：
 # 1. 复制此文件为 config.yaml
-# 2. 填入你的钉钉机器人配置
+# 2. 填入你的飞书机器人配置
 # 3. 不要提交 config.yaml 到Git仓库（已加入.gitignore）
 
 data_dir: data
 
-# 钉钉机器人配置
-# 1. 在钉钉群中添加自定义机器人
+# 飞书机器人配置
+# 1. 在飞书群中添加自定义机器人
 # 2. 复制 webhook URL 和加签密钥
 # 3. 填入下方（去掉引号内的占位符）
-dingtalk:
-  webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN_HERE"
+feishu:
+  webhook_url: "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_HOOK_KEY_HERE"
   secret: "YOUR_SECRET_HERE"
+
+# 钉钉机器人配置（可选，已默认切换为飞书通知）
+# dingtalk:
+#   webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN_HERE"
+#   secret: "YOUR_SECRET_HERE"
 
 # 定时任务配置
 schedule:

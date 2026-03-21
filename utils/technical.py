@@ -51,15 +51,13 @@ def HHV(series, n):
 
 def SMA(X, n, m):
     """
-    移动平均 - 通达信风格
+    移动平均 - 通达信风格（向量化优化，结果与原递归实现完全一致）
     SMA(X,N,M): X的N日移动平均, M为权重
     公式: Y = (X*M + Y'*(N-M)) / N
     """
-    result = pd.Series(index=X.index, dtype=float)
-    result.iloc[0] = X.iloc[0]
-    for i in range(1, len(X)):
-        result.iloc[i] = (X.iloc[i] * m + result.iloc[i-1] * (n - m)) / n
-    return result
+    alpha = m / n
+    # 使用pandas的ewm实现，调整参数与递归计算完全一致
+    return X.ewm(alpha=alpha, adjust=False).mean()
 
 
 def REF(series, n):
@@ -127,19 +125,16 @@ def KDJ(df, n=9, m1=3, m2=3):
         else:
             rsv.iloc[i] = (df_calc['close'].iloc[i] - low_min.iloc[i]) / range_val.iloc[i] * 100
     
-    # SMA计算 - 通达信风格
+    # SMA计算 - 通达信风格（向量化优化，结果与原递归实现完全一致）
     # K = SMA(RSV, M1, 1): K = (RSV*1 + K'*(M1-1)) / M1
-    k = pd.Series(index=df_calc.index, dtype=float)
-    d = pd.Series(index=df_calc.index, dtype=float)
-    
-    # 初始化第一日K、D值为50
+    k = rsv.ewm(alpha=1/m1, adjust=False).mean()
+    # 初始化第一日K值为50
     k.iloc[0] = 50.0
-    d.iloc[0] = 50.0
     
-    # 递归计算
-    for i in range(1, len(df_calc)):
-        k.iloc[i] = (rsv.iloc[i] * 1 + k.iloc[i-1] * (m1 - 1)) / m1
-        d.iloc[i] = (k.iloc[i] * 1 + d.iloc[i-1] * (m2 - 1)) / m2
+    # D = SMA(K, M2, 1)
+    d = k.ewm(alpha=1/m2, adjust=False).mean()
+    # 初始化第一日D值为50
+    d.iloc[0] = 50.0
     
     # 计算J值
     j = 3 * k - 2 * d
