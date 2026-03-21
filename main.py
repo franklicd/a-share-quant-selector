@@ -348,9 +348,11 @@ class QuantSystem:
         
         return results, stock_names
     
-    def run_full(self, category='all', max_stocks=None):
+    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False):
         """完整流程：更新 + 选股 + 通知（带K线图）
         :param max_stocks: 限制处理的股票数量（用于快速测试）
+        :param no_notify: 是否跳过通知发送
+        :param no_chart: 是否跳过K线图生成
         """
         from datetime import datetime
         import json
@@ -369,17 +371,24 @@ class QuantSystem:
         results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True)
 
         # 3. 发送通知（带K线图）
-        if results:
-
-            # 使用带K线图的发送方法
-            self.notifier.send_stock_selection_with_charts(
-                results,
-                stock_names,
-                category_filter=category,
-                stock_data_dict=stock_data_dict,
-                params=self.registry.strategies.get('BowlReboundStrategy', {}).params if self.registry.strategies else {},
-                send_text_first=True
-            )
+        if results and not no_notify:
+            if no_chart:
+                # 只发送文本，跳过K线图
+                self.notifier.send_stock_selection(
+                    results,
+                    stock_names,
+                    category_filter=category
+                )
+            else:
+                # 使用带K线图的发送方法
+                self.notifier.send_stock_selection_with_charts(
+                    results,
+                    stock_names,
+                    category_filter=category,
+                    stock_data_dict=stock_data_dict,
+                    params=self.registry.strategies.get('BowlReboundStrategy', {}).params if self.registry.strategies else {},
+                    send_text_first=True
+                )
 
         return results
     
@@ -680,6 +689,20 @@ B1完美图形匹配:
         help='筛选股票分类: all(全部), bowl_center(回落碗中), near_duokong(靠近多空线), near_short_trend(靠近短期趋势线)'
     )
     
+    parser.add_argument(
+        '--no-notify',
+        action='store_true',
+        default=False,
+        help='跳过飞书通知发送，仅输出结果到控制台'
+    )
+    
+    parser.add_argument(
+        '--no-chart',
+        action='store_true',
+        default=False,
+        help='跳过K线图生成和发送，仅输出文本结果'
+    )
+    
     # 从配置读取B1PatternMatch默认值
     try:
         from strategy.pattern_config import MIN_SIMILARITY_SCORE, DEFAULT_LOOKBACK_DAYS
@@ -746,7 +769,12 @@ B1完美图形匹配:
             )
         else:
             # 原有选股流程（不带B1匹配）
-            quant.run_full(category=args.category, max_stocks=args.max_stocks)
+            quant.run_full(
+                category=args.category, 
+                max_stocks=args.max_stocks,
+                no_notify=args.no_notify,
+                no_chart=args.no_chart
+            )
     
     elif args.command == 'web':
         # 启动Web服务器

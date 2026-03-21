@@ -68,8 +68,13 @@ class BowlReboundStrategy(BaseStrategy):
     
     def calculate_indicators(self, df) -> pd.DataFrame:
         """
-        计算碗口反弹策略所需的所有指标
+        计算碗口反弹策略所需的所有指标（已优化指标缓存，避免重复计算）
         """
+        # 指标缓存：如果df已经计算过当前策略的指标，直接返回，避免重复计算
+        cache_key = f'bounce_indicators_{self.params["M1"]}_{self.params["M2"]}_{self.params["M3"]}_{self.params["M4"]}'
+        if cache_key in df.attrs:
+            return df.attrs[cache_key]
+        
         result = df.copy()
         
         # 1. 知行趋势线（使用technical模块，正确处理倒序数据）
@@ -137,10 +142,45 @@ class BowlReboundStrategy(BaseStrategy):
         # 7. J值低位
         result['j_low'] = result['J'] <= self.params['J_VAL']
         
+        # 缓存计算结果，避免重复计算
+        cache_key = f'bounce_indicators_{self.params["M1"]}_{self.params["M2"]}_{self.params["M3"]}_{self.params["M4"]}'
+        df.attrs[cache_key] = result.copy()
+        
         return result
     
-    # 市值缓存：{股票代码: (市值, 缓存时间戳)}，缓存有效期24小时
+    # 市值缓存：{股票代码: (市值, 缓存时间戳)}，缓存有效期24小时，支持持久化到本地
     _market_cap_cache = {}
+    _market_cap_cache_file = Path(__file__).parent.parent / 'data' / 'market_cap_cache.json'
+    
+    @classmethod
+    def _load_market_cap_cache(cls):
+        """从本地加载市值缓存"""
+        if cls._market_cap_cache_file.exists():
+            try:
+                with open(cls._market_cap_cache_file, 'r', encoding='utf-8') as f:
+                    cls._market_cap_cache = json.load(f)
+                # 转换时间戳为float
+                for k, v in cls._market_cap_cache.items():
+                    if isinstance(v, list) and len(v) == 2:
+                        cls._market_cap_cache[k] = (v[0], float(v[1]))
+            except Exception as e:
+                print(f"加载市值缓存失败: {e}")
+                cls._market_cap_cache = {}
+    
+    @classmethod
+    def _save_market_cap_cache(cls):
+        """保存市值缓存到本地"""
+        try:
+            cls._market_cap_cache_file.parent.mkdir(parents=True, exist_ok=True)
+            # 转换为可序列化的格式
+            serializable = {}
+            for k, v in cls._market_cap_cache.items():
+                if isinstance(v, tuple) and len(v) == 2:
+                    serializable[k] = [v[0], v[1]]
+            with open(cls._market_cap_cache_file, 'w', encoding='utf-8') as f:
+                json.dump(serializable, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"保存市值缓存失败: {e}")
     
     def _check_market_cap_realtime(self, df) -> pd.Series:
         """
@@ -149,6 +189,10 @@ class BowlReboundStrategy(BaseStrategy):
         """
         import akshare as ak
         import time
+        
+        # 首次调用加载本地缓存
+        if not self._market_cap_cache:
+            self._load_market_cap_cache()
         
         # 尝试从CSV数据获取
         if 'market_cap' in df.columns:
@@ -194,6 +238,8 @@ class BowlReboundStrategy(BaseStrategy):
                     
                     # 写入缓存
                     self._market_cap_cache[stock_code] = (total_cap, current_time)
+                    # 持久化到本地
+                    self._save_market_cap_cache()
                     
                     # 创建 Series
                     return pd.Series([total_cap > self.params['CAP']] * len(df), index=df.index)
