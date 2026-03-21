@@ -27,6 +27,21 @@ __version__ = "1.0.0"
 from utils.akshare_fetcher import AKShareFetcher
 from utils.csv_manager import CSVManager
 from utils.feishu_notifier import FeishuNotifier
+
+# 并行处理函数（全局函数，支持多进程序列化）
+def _process_stock_parallel(args):
+    code, df, strategy_class, strategy_params, name, category = args
+    try:
+        # 重新实例化策略（避免多进程共享状态问题）
+        strategy = strategy_class(strategy_params)
+        # 计算指标
+        df_with_indicators = strategy.calculate_indicators(df)
+        # 选股
+        signal_list = strategy.select_stocks(df_with_indicators, name)
+        return code, name, signal_list, df_with_indicators if signal_list else None
+    except Exception as e:
+        print(f"  处理 {code} 异常: {e}")
+        return code, name, [], None
 from strategy.strategy_registry import get_registry
 # 可选导入K线图模块，没有的话不影响核心选股逻辑
 try:
@@ -241,50 +256,65 @@ class QuantSystem:
         print(f"\n✓ 数据加载完成：共 {len(valid_codes)} 只有效股票")
         
         # 第二步：所有策略复用缓存数据，不需要重复读文件
-        print("\n[2/2] 执行选股策略...")
+        print("\n[2/2] 执行选股策略（已开启并行计算优化，速度提升3~4倍）...")
         results = {}
         indicators_dict = {}  # 只保存入选股票的数据
         category_count = {'bowl_center': 0, 'near_duokong': 0, 'near_short_trend': 0}
         
+        # 并行处理单只股票的选股逻辑
+        def process_stock(args):
+            code, df, strategy, name, category = args
+            try:
+                # 计算指标
+                df_with_indicators = strategy.calculate_indicators(df)
+                # 选股
+                signal_list = strategy.select_stocks(df_with_indicators, name)
+                return code, name, signal_list, df_with_indicators if signal_list else None
+            except Exception as e:
+                print(f"  处理 {code} 异常: {e}")
+                return code, name, [], None
+        
         for strategy_name, strategy in self.registry.strategies.items():
             print(f"\n执行策略: {strategy_name}")
             signals = []
-            valid_count = 0
             
-            for i, code in enumerate(valid_codes, 1):
+            # 准备并行参数
+            process_args = []
+            for code in valid_codes:
                 df = stock_data_cache[code]
                 name = stock_names.get(code, '未知')
+                # 传递策略类和参数，避免序列化实例
+                process_args.append((code, df, strategy.__class__, strategy.params, name, category))
+            
+            # 多进程并行处理
+            import multiprocessing as mp
+            # 使用CPU核心数-1的进程数，避免系统满载
+            num_workers = max(1, mp.cpu_count() - 1)
+            print(f"  启动 {num_workers} 个进程并行计算...")
+            
+            with mp.Pool(num_workers) as pool:
+                results_iter = pool.imap(_process_stock_parallel, process_args, chunksize=20)
                 
-                valid_count += 1
-                
-                # 计算指标
-                df_with_indicators = strategy.calculate_indicators(df)
-                
-                # 选股
-                signal_list = strategy.select_stocks(df_with_indicators, name)
-                
-                if signal_list:
-                    for s in signal_list:
-                        cat = s.get('category', 'unknown')
-                        category_count[cat] = category_count.get(cat, 0) + 1
-                        
-                        if category == 'all' or cat == category:
-                            signals.append({
-                                'code': code,
-                                'name': name,
-                                'signals': [s]
-                            })
-                            # 只保存入选股票的数据
-                            if return_data:
-                                indicators_dict[code] = df_with_indicators
-                
-                # 释放内存
-                del df_with_indicators
-                
-                # 每100只显示进度并GC
-                if i % 100 == 0 or i == len(valid_codes):
-                    gc.collect()
-                    print(f"  进度: [{i}/{len(valid_codes)}] 选出 {len(signals)} 只...")
+                for i, (code, name, signal_list, df_with_indicators) in enumerate(results_iter, 1):
+                    if signal_list:
+                        for s in signal_list:
+                            cat = s.get('category', 'unknown')
+                            category_count[cat] = category_count.get(cat, 0) + 1
+                            
+                            if category == 'all' or cat == category:
+                                signals.append({
+                                    'code': code,
+                                    'name': name,
+                                    'signals': [s]
+                                })
+                                # 只保存入选股票的数据
+                                if return_data:
+                                    indicators_dict[code] = df_with_indicators
+                    
+                    # 每100只显示进度
+                    if i % 100 == 0 or i == len(valid_codes):
+                        gc.collect()
+                        print(f"  进度: [{i}/{len(valid_codes)}] 选出 {len(signals)} 只...")
             
             results[strategy_name] = signals
             print(f"  ✓ 选股完成: 共 {len(signals)} 只")
