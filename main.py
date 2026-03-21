@@ -622,10 +622,10 @@ def main():
         epilog="""
 示例:
   python main.py init                          # 首次抓取6年历史数据
-  python main.py run                           # 完整流程（更新+选股+通知）
-  python main.py run --b1-match                # 完整流程+B1完美图形匹配排序
-  python main.py run --b1-match --min-similarity 70  # 匹配+提高相似度阈值到70%
-  python main.py run --b1-match --lookback-days 30   # 使用30天回看期
+  python main.py run                           # 完整流程（更新+选股+通知+B1完美图形匹配排序，默认启用）
+  python main.py run --no-b1-match             # 完整流程（禁用B1匹配，仅普通选股）
+  python main.py run --min-similarity 70       # 提高B1匹配相似度阈值到70%
+  python main.py run --lookback-days 30        # B1匹配使用30天回看期
   python main.py web                           # 启动Web界面
   python main.py --version                     # 显示版本信息
 
@@ -637,8 +637,9 @@ def main():
 
 B1完美图形匹配:
   基于10个历史成功案例（双线+量比+形态三维相似度匹配）
-  使用 --b1-match 参数启用，--lookback-days 调整回看天数（默认25天）
-  使用 --min-similarity 调整匹配阈值（默认60%，范围0-100）
+  **默认自动启用**，使用 --no-b1-match 参数禁用
+  --lookback-days 调整回看天数（默认25天）
+  --min-similarity 调整匹配阈值（默认60%，范围0-100）
         """
     )
 
@@ -720,9 +721,11 @@ B1完美图形匹配:
     )
     
     parser.add_argument(
-        '--b1-match',
-        action='store_true',
-        help='启用B1完美图形匹配排序（在run命令中使用）'
+        '--no-b1-match',
+        action='store_false',
+        dest='b1_match',
+        default=True,
+        help='禁用B1完美图形匹配排序（默认启用）'
     )
     
     parser.add_argument(
