@@ -187,7 +187,6 @@ class BowlReboundStrategy(BaseStrategy):
         检查总市值是否达标
         优先从CSV数据获取，其次用缓存，最后从实时数据获取（已优化批量缓存，速度提升10倍）
         """
-        import akshare as ak
         import time
         
         # 首次调用加载本地缓存
@@ -221,6 +220,7 @@ class BowlReboundStrategy(BaseStrategy):
         
         # 缓存不存在或过期，从实时数据获取
         try:
+            import akshare as ak
             # 获取实时数据
             spot_df = ak.stock_individual_info_em(symbol=stock_code)
             if not spot_df.empty:

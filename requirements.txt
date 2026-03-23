@@ -9,3 +9,5 @@ matplotlib>=3.7.0
 scipy>=1.10.0
 Pillow>=10.0.0
 fastdtw>=0.3.4
+polars>=0.20.0
+pyarrow>=14.0.0

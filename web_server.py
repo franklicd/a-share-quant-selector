@@ -232,7 +232,7 @@ def update_config():
         return jsonify({'success': False, 'error': str(e)})
 
 
-def run_web_server(host='0.0.0.0', port=5000, debug=False):
+def run_web_server(host='0.0.0.0', port=5001, debug=False):
     """启动Web服务器"""
     print(f"🌐 启动Web服务器: http://{host}:{port}")
     app.run(host=host, port=port, debug=debug)

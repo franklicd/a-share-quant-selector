@@ -691,38 +691,40 @@ class AKShareFetcher:
         if max_stocks:
             stock_codes = stock_codes[:max_stocks]
         
-        # 批量获取市值数据（主接口：akshare，备选：腾讯）
+        # 批量获取市值数据（主接口：腾讯，备选：akshare）
         print("\n正在批量获取市值数据...")
         market_cap_map = {}
-        
-        # 方法1: 尝试akshare接口
+
+        # 方法 1: 优先使用腾讯接口
         try:
-            spot_df = ak.stock_zh_a_spot_em()
-            for _, row in spot_df.iterrows():
-                code = str(row['代码']).zfill(6)
-                cap = row['总市值']
-                if pd.notna(cap) and cap > 0:
-                    # 统一转为元
-                    if cap < 1e10:
-                        cap = int(cap * 1e8)
-                    else:
-                        cap = int(cap)
-                    market_cap_map[code] = cap
-            print(f"  ✓ akshare接口成功: {len(market_cap_map)} 只股票市值")
-        except Exception as e:
-            print(f"  akshare接口失败: {e}")
-            print("  尝试腾讯备选接口...")
-            # 方法2: 使用腾讯接口备选
+            print("  尝试腾讯接口获取市值...")
             market_cap_map = self._fetch_market_cap_tencent(stock_codes)
             if market_cap_map:
-                print(f"  ✓ 腾讯接口成功: {len(market_cap_map)} 只股票市值")
+                print(f"  ✓ 腾讯接口成功：{len(market_cap_map)} 只股票市值")
             else:
-                print(f"  ✗ 腾讯接口也失败，市值数据将缺失")
-        
-        total = len(stock_codes)
-        success = 0
-        failed = 0
-        failed_list = []
+                print("  腾讯接口返回空，尝试 akshare 备选接口...")
+        except Exception as e:
+            print(f"  腾讯接口失败：{e}")
+            print("  尝试 akshare 备选接口...")
+
+        # 方法 2: akshare 备选
+        if not market_cap_map:
+            try:
+                spot_df = ak.stock_zh_a_spot_em()
+                for _, row in spot_df.iterrows():
+                    code = str(row['代码']).zfill(6)
+                    cap = row['总市值']
+                    if pd.notna(cap) and cap > 0:
+                        # 统一转为元
+                        if cap < 1e10:
+                            cap = int(cap * 1e8)
+                        else:
+                            cap = int(cap)
+                        market_cap_map[code] = cap
+                print(f"  ✓ akshare 接口成功：{len(market_cap_map)} 只股票市值")
+            except Exception as e:
+                print(f"  akshare 接口也失败：{e}")
+                print("  ✗ 市值数据将缺失")
         
         print(f"\n开始抓取 {total} 只股票的6年历史数据...")
         print("=" * 60)

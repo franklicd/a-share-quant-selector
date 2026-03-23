@@ -167,11 +167,12 @@ class QuantSystem:
         self.fetcher.daily_update(max_stocks=max_stocks)
         print("\n✓ 数据更新完成")
 
-    def select_stocks(self, category='all', max_stocks=None, return_data=False):
+    def select_stocks(self, category='all', max_stocks=None, return_data=False, M_days=None):
         """执行选股
         :param category: 股票分类筛选，'all'表示全部，其他值按分类筛选
         :param max_stocks: 限制处理的股票数量（用于快速测试）
         :param return_data: 是否返回股票数据字典（用于K线图生成）
+        :param M_days: 碗口反弹策略的回溯天数 M，None 则使用配置文件值
         :return: (results, stock_names) 或 (results, stock_names, stock_data_dict)
         """
         print("=" * 60)
@@ -189,6 +190,13 @@ class QuantSystem:
             return {}, {}
         
         print(f"已加载 {len(self.registry.list_strategies())} 个策略")
+        # 如果传入了 M_days，覆盖所有策略的 M 参数
+        if M_days is not None:
+            print(f"⚠️  使用命令行覆盖策略参数 M = {M_days}")
+            for strategy_name, strategy_obj in self.registry.strategies.items():
+                if 'M' in strategy_obj.params:
+                    strategy_obj.params['M'] = M_days
+        
         
         # 输出当前策略参数
         print("\n当前策略参数:")
@@ -200,7 +208,10 @@ class QuantSystem:
                 if param_name == 'N':
                     note = " (成交量倍数)"
                 elif param_name == 'M':
-                    note = " (回溯天数)"
+                    if M_days:
+                        note = f" (回溯天数={M_days}, 命令行覆盖)"
+                    else:
+                        note = " (回溯天数)"
                 elif param_name == 'CAP':
                     note = f" ({param_value/1e8:.0f}亿市值门槛)"
                 elif param_name == 'J_VAL':
@@ -348,7 +359,7 @@ class QuantSystem:
         
         return results, stock_names
     
-    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False):
+    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False, M_days=None):
         """完整流程：更新 + 选股 + 通知（带K线图）
         :param max_stocks: 限制处理的股票数量（用于快速测试）
         :param no_notify: 是否跳过通知发送
@@ -368,7 +379,7 @@ class QuantSystem:
         self._smart_update(max_stocks=max_stocks)
 
         # 2. 选股（返回数据和结果）
-        results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True)
+        results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True, M_days=M_days)
 
         # 3. 发送通知（带K线图）
         if results and not no_notify:
@@ -392,7 +403,7 @@ class QuantSystem:
 
         return results
     
-    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None):
+    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None):
         """
         执行选股 + B1完美图形匹配排序
         
@@ -425,7 +436,8 @@ class QuantSystem:
         results, stock_names, stock_data_dict = self.select_stocks(
             category=category, 
             max_stocks=max_stocks, 
-            return_data=True
+            return_data=True,
+            M_days=M_days
         )
         
         # 统计选股总数
@@ -534,7 +546,7 @@ class QuantSystem:
             'total_selected': total_selected,
         }
     
-    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25):
+    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25, M_days=None):
         """
         完整流程：更新 + 选股 + B1完美图形匹配 + 通知
 
@@ -734,6 +746,21 @@ B1完美图形匹配:
         default=None,
         help=f'B1完美图形匹配的回看天数 (默认: {default_lookback_days})'
     )
+    # 从配置读取 BowlReboundStrategy 的 M 默认值
+    try:
+        from utils.config_loader import get_strategy_params
+        bowl_params = get_strategy_params('BowlReboundStrategy')
+        default_M_days = bowl_params.get('M', 30)
+    except:
+        default_M_days = 30
+
+    parser.add_argument(
+        '--M-days',
+        type=int,
+        default=None,
+        dest='M_days',
+        help=f'碗口反弹策略的回溯天数 M (默认：{default_M_days})'
+    )
 
     args = parser.parse_args()
 
@@ -764,19 +791,23 @@ B1完美图形匹配:
             # 如果命令行未指定，使用配置文件中的默认值
             min_sim = args.min_similarity if args.min_similarity is not None else default_min_similarity
             lookback = args.lookback_days if args.lookback_days is not None else default_lookback_days
+            M_days = args.M_days if args.M_days is not None else None
             quant.run_with_b1_match(
                 category=args.category,
                 max_stocks=args.max_stocks,
                 min_similarity=min_sim,
-                lookback_days=lookback
+                lookback_days=lookback,
+                M_days=M_days
             )
         else:
             # 原有选股流程（不带B1匹配）
+            M_days = args.M_days if args.M_days is not None else None
             quant.run_full(
                 category=args.category, 
                 max_stocks=args.max_stocks,
                 no_notify=args.no_notify,
-                no_chart=args.no_chart
+                no_chart=args.no_chart,
+                M_days=M_days
             )
     
     elif args.command == 'web':
