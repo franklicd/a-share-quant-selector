@@ -550,15 +550,15 @@ class Backtester:
         return_pct = (sell_price - buy_price) / buy_price * 100
 
         # 计算期间最大涨幅（从买入日到卖出日之间的最高价相对于买入价的涨幅）
-        # 找到买入和卖出之间的所有数据
-        df_sorted = df.sort_values('date')
-        buy_idx = df_sorted[df_sorted['date'].dt.date == actual_buy_date]
-        sell_idx = df_sorted[df_sorted['date'].dt.date == sell_date]
+        # 修复：重置索引确保连续，使用 iloc 避免索引跳跃问题
+        df_sorted = df.sort_values('date').reset_index(drop=True)
+        buy_mask = df_sorted['date'].dt.date == actual_buy_date
+        sell_mask = df_sorted['date'].dt.date == sell_date
 
-        if len(buy_idx) > 0 and len(sell_idx) > 0:
-            start_pos = buy_idx.index[0]
-            end_pos = sell_idx.index[0]
-            period_df = df_sorted.loc[start_pos:end_pos]
+        if buy_mask.any() and sell_mask.any():
+            start_pos = buy_mask.argmax()  # 获取买入位置
+            end_pos = sell_mask.argmax()   # 获取卖出位置
+            period_df = df_sorted.iloc[start_pos:end_pos+1]  # 包含两端
             max_high = period_df['high'].max()
             max_gain_pct = (max_high - buy_price) / buy_price * 100
 
