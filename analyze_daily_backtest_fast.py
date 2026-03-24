@@ -52,6 +52,14 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     df['选股日期'] = pd.to_datetime(df['选股日期'])
     df['卖出日期'] = pd.to_datetime(df['卖出日期'])
 
+    # 处理行业热度列（需要在 has_industry_data 检查之前处理）
+    if '行业' in df.columns:
+        df['行业'] = df['行业'].fillna('未知')
+        # 转换行业热度列为数值（处理字符串和数值混合的情况）
+        for col in ['行业热度_买入日', '行业热度_10pct 日', '行业热度_neg2pct 日', '行业热度_neg4pct 日', '行业热度_卖出日']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col].astype(str).replace('-', ''), errors='coerce')
+
     # 处理止盈止损触发日期列
     has_trigger_data = '触发 +10% 日期' in df.columns
     if has_trigger_data:
@@ -66,15 +74,10 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         df['达到 +10% 天数'] = df['达到 +10% 天数'].replace('-', '').str.replace('第', '').str.replace('天', '')
         df['达到 +10% 天数'] = pd.to_numeric(df['达到 +10% 天数'], errors='coerce')
 
-    # 处理行业热度列
+    # 设置行业数据标志
     has_industry_data = '行业' in df.columns
     if has_industry_data:
         df['行业'] = df['行业'].fillna('未知')
-        # 转换行业热度列为数值
-        for col in ['行业热度_买入日', '行业热度_10pct 日', '行业热度_neg2pct 日', '行业热度_neg4pct 日', '行业热度_卖出日']:
-            if col in df.columns:
-                df[col] = df[col].replace('-', '').replace('', pd.NA)
-                df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # 处理是否曾跌破成本价列
     has_ever_below_zero = '是否曾跌破成本价' in df.columns
@@ -438,10 +441,10 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 """
 
     if has_trigger_data:
-        # 计算各触发条件的数量
-        trigger_10pct_count = (df['触发 +10% 日期'] != '').sum()
-        trigger_neg2pct_count = (df['触发 -2% 日期'] != '').sum()
-        trigger_neg4pct_count = (df['触发 -4% 日期'] != '').sum()
+        # 计算各触发条件的数量（修复：使用 pd.notna() 而非 != '' 来判断）
+        trigger_10pct_count = df['触发 +10% 日期'].notna().sum()
+        trigger_neg2pct_count = df['触发 -2% 日期'].notna().sum()
+        trigger_neg4pct_count = df['触发 -4% 日期'].notna().sum()
 
         total = len(df)
         trigger_10pct_pct = trigger_10pct_count / total * 100
@@ -458,14 +461,14 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
         # 增加有意义的条件比率
         if trigger_10pct_count > 0 and has_ever_below_zero:
-            clean_10pct_count = len(df[(df['触发 +10% 日期'] != '') & (df['是否曾跌破成本价'] == '否')])
+            clean_10pct_count = len(df[df['触发 +10% 日期'].notna() & (df['是否曾跌破成本价'] == '否')])
             clean_rate = clean_10pct_count / trigger_10pct_count * 100
         else:
             clean_10pct_count = 0
             clean_rate = 0
 
         if trigger_neg2pct_count > 0:
-            neg2_then_10pct_temp = len(df[(df['触发 +10% 日期'] != '') & (df['触发 -2% 日期'] != '')])
+            neg2_then_10pct_temp = len(df[df['触发 +10% 日期'].notna() & df['触发 -2% 日期'].notna()])
             bounce_rate = neg2_then_10pct_temp / trigger_neg2pct_count * 100
         else:
             neg2_then_10pct_temp = 0
@@ -488,9 +491,9 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         clean_10pct = 0  # 从未跌破成本价（0%）就直接涨到 10%（全身而退）
 
         for idx, row in df.iterrows():
-            reached_10pct = row['触发 +10% 日期'] != '' and pd.notna(row['触发 +10% 日期'])
-            reached_neg2 = row['触发 -2% 日期'] != '' and pd.notna(row['触发 -2% 日期'])
-            reached_neg4 = row['触发 -4% 日期'] != '' and pd.notna(row['触发 -4% 日期'])
+            reached_10pct = pd.notna(row['触发 +10% 日期'])
+            reached_neg2 = pd.notna(row['触发 -2% 日期'])
+            reached_neg4 = pd.notna(row['触发 -4% 日期'])
 
             if reached_10pct:
                 # 统计从未跌破成本价就直接涨到 10% 的（真正的全身而退）
@@ -608,9 +611,9 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         # 按相似度区间统计路径分布
         path_stats = df.groupby('相似度区间').apply(lambda g: pd.Series({
             '样本数': len(g),
-            '全身而退数': len(g[(g['触发 +10% 日期'] != '') & (g['是否曾跌破成本价'] == '否')]) if has_ever_below_zero else 0,
-            '先跌后涨数': len(g[(g['触发 +10% 日期'] != '') & (g['触发 -2% 日期'] != '')]),
-            '只跌不涨数': len(g[(g['触发 +10% 日期'] == '') & (g['触发 -4% 日期'] != '')]),
+            '全身而退数': len(g[g['触发 +10% 日期'].notna() & (g['是否曾跌破成本价'] == '否')]) if has_ever_below_zero else 0,
+            '先跌后涨数': len(g[g['触发 +10% 日期'].notna() & g['触发 -2% 日期'].notna()]),
+            '只跌不涨数': len(g[g['触发 +10% 日期'].isna() & g['触发 -4% 日期'].notna()]),
             '最终盈利数': len(g[g['涨跌幅'] > 0])
         }), include_groups=False)
 
@@ -662,9 +665,22 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
             # 行业热度与盈亏关系
             df_valid = df[df['行业热度_买入日'].notna()].copy()
-            if len(df_valid) > 0:
-                # 按热度分位数分组
-                df_valid['热度分组'] = pd.qcut(df_valid['行业热度_买入日'], q=4, labels=['低热度', '中低热度', '中高热度', '高热度'], duplicates='drop')
+            if len(df_valid) > 10:  # 至少需要 10 个样本才能分组
+                # 按热度分位数分组（处理重复值问题）
+                try:
+                    df_valid['热度分组'] = pd.qcut(
+                        df_valid['行业热度_买入日'],
+                        q=4,
+                        labels=['低热度', '中低热度', '中高热度', '高热度'],
+                        duplicates='drop'
+                    )
+                except ValueError:
+                    # 如果分位数分组失败，使用等宽分组
+                    df_valid['热度分组'] = pd.cut(
+                        df_valid['行业热度_买入日'],
+                        bins=4,
+                        labels=['低热度', '中低热度', '中高热度', '高热度']
+                    )
 
                 heat_vs_return = df_valid.groupby('热度分组', observed=True).agg({
                     '代码': 'count',
@@ -733,9 +749,9 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
     # 添加止盈止损触发总结
     if has_trigger_data:
-        trigger_10pct_count = (df['触发 +10% 日期'] != '').sum()
-        trigger_neg2pct_count = (df['触发 -2% 日期'] != '').sum()
-        trigger_neg4pct_count = (df['触发 -4% 日期'] != '').sum()
+        trigger_10pct_count = df['触发 +10% 日期'].notna().sum()
+        trigger_neg2pct_count = df['触发 -2% 日期'].notna().sum()
+        trigger_neg4pct_count = df['触发 -4% 日期'].notna().sum()
 
         # 重新计算路径分析
         neg2_then_10pct = 0
@@ -743,8 +759,8 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         clean_10pct = 0  # 从未跌破成本价就直接涨到 10%
 
         for idx, row in df.iterrows():
-            reached_10pct = row['触发 +10% 日期'] != '' and pd.notna(row['触发 +10% 日期'])
-            reached_neg2 = row['触发 -2% 日期'] != '' and pd.notna(row['触发 -2% 日期'])
+            reached_10pct = pd.notna(row['触发 +10% 日期'])
+            reached_neg2 = pd.notna(row['触发 -2% 日期'])
 
             if reached_10pct:
                 # 统计从未跌破成本价就直接涨到 10% 的
@@ -837,33 +853,37 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
 """
     # 行业热度分位数分析
-    if has_industry_data and '行业热度_买入日' in df.columns:
-        df_heat = df[df['行业热度_买入日'].notna()].copy()
+    heat_col = '行业热度_买入日'
+    if has_industry_data and heat_col in df.columns:
+        df_heat = df[df[heat_col].notna()].copy()
 
         if len(df_heat) > 0:
-            # 按热度分位数分组
-            df_heat['热度分位'] = pd.qcut(df_heat['行业热度_买入日'], q=5, labels=['极低 (0-20%)', '低 (20-40%)', '中 (40-60%)', '高 (60-80%)', '极高 (80-100%)'], duplicates='drop')
+            try:
+                # 按热度分位数分组
+                df_heat['热度分位'] = pd.qcut(df_heat['行业热度_买入日'], q=5, labels=['极低 (0-20%)', '低 (20-40%)', '中 (40-60%)', '高 (60-80%)', '极高 (80-100%)'], duplicates='drop')
 
-            heat_quantile_stats = df_heat.groupby('热度分位', observed=True).agg({
-                '代码': 'count',
-                '涨跌幅': ['mean', lambda x: (x > 0).sum()],
-                '达到 +10% 天数': lambda x: x.notna().sum()
-            }).round(2)
+                heat_quantile_stats = df_heat.groupby('热度分位', observed=True).agg({
+                    '代码': 'count',
+                    '涨跌幅': ['mean', lambda x: (x > 0).sum()],
+                    '达到 +10% 天数': lambda x: x.notna().sum()
+                }).round(2)
 
-            heat_quantile_stats.columns = ['样本数', '平均盈亏', '胜率', '涨到 10% 数量']
-            heat_quantile_stats['胜率'] = (heat_quantile_stats['胜率'] / heat_quantile_stats['样本数'] * 100).round(1)
-            heat_quantile_stats['涨到 10% 概率'] = (heat_quantile_stats['涨到 10% 数量'] / heat_quantile_stats['样本数'] * 100).round(1)
+                heat_quantile_stats.columns = ['样本数', '平均盈亏', '胜率', '涨到 10% 数量']
+                heat_quantile_stats['胜率'] = (heat_quantile_stats['胜率'] / heat_quantile_stats['样本数'] * 100).round(1)
+                heat_quantile_stats['涨到 10% 概率'] = (heat_quantile_stats['涨到 10% 数量'] / heat_quantile_stats['样本数'] * 100).round(1)
 
-            report += "| 热度分位 | 样本数 | 胜率 | 平均盈亏 | 涨到 10% 概率 |\n"
-            report += "|----------|--------|------|----------|-------------|\n"
-            for quantile in heat_quantile_stats.index:
-                row = heat_quantile_stats.loc[quantile]
-                report += f"| {quantile} | {int(row['样本数'])} | {row['胜率']:.1f}% | {row['平均盈亏']:+.2f}% | {row['涨到 10% 概率']:.1f}% |\n"
+                report += "| 热度分位 | 样本数 | 胜率 | 平均盈亏 | 涨到 10% 概率 |\n"
+                report += "|----------|--------|------|----------|-------------|\n"
+                for quantile in heat_quantile_stats.index:
+                    row = heat_quantile_stats.loc[quantile]
+                    report += f"| {quantile} | {int(row['样本数'])} | {row['胜率']:.1f}% | {row['平均盈亏']:+.2f}% | {row['涨到 10% 概率']:.1f}% |\n"
 
-            # 找出最佳热度区间
-            best_heat_idx = heat_quantile_stats['胜率'].idxmax()
-            best_heat_win = heat_quantile_stats.loc[best_heat_idx, '胜率']
-            report += f"\n**结论**: 行业热度在 **'{best_heat_idx}'** 区间时胜率最高 ({best_heat_win:.1f}%)\n"
+                # 找出最佳热度区间
+                best_heat_idx = heat_quantile_stats['胜率'].idxmax()
+                best_heat_win = heat_quantile_stats.loc[best_heat_idx, '胜率']
+                report += f"\n**结论**: 行业热度在 **'{best_heat_idx}'** 区间时胜率最高 ({best_heat_win:.1f}%)\n"
+            except Exception as e:
+                report += f"*行业热度分析失败：{e}*\n"
         else:
             report += "*行业热度数据不足*\n"
     else:
@@ -872,6 +892,8 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     report += """
 
 ### 10.3 相似度 × 行业热度 双重筛选
+
+**说明**: 行业热度使用**选股/买入当日**的行业热度（即决策时可获得的数据）
 
 """
     # 双重筛选分析
@@ -885,13 +907,11 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         df_dual['高相似度'] = df_dual['相似度'] >= sim_threshold
         df_dual['高热度'] = df_dual['行业热度_买入日'] >= heat_threshold
 
-        dual_stats = df_dual.groupby(['高相似度', '高热度']).agg({
-            '代码': 'count',
-            '涨跌幅': 'mean',
-            '涨跌幅': lambda x: (x > 0).sum()
-        }).round(2)
-
-        dual_stats.columns = ['样本数', '平均盈亏', '盈利数']
+        dual_stats = df_dual.groupby(['高相似度', '高热度']).agg(
+            样本数=('代码', 'count'),
+            平均盈亏=('涨跌幅', 'mean'),
+            盈利数=('涨跌幅', lambda x: (x > 0).sum())
+        ).round(2)
         dual_stats['胜率'] = (dual_stats['盈利数'] / dual_stats['样本数'] * 100).round(1)
 
         report += "| 相似度 | 行业热度 | 样本数 | 胜率 | 平均盈亏 |\n"
@@ -901,13 +921,116 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
             heat_label = f'高 (≥{heat_threshold:.0f})' if high_heat else f'低 (<{heat_threshold:.0f})'
             report += f"| {sim_label} | {heat_label} | {int(row['样本数'])} | {row['胜率']:.1f}% | {row['平均盈亏']:+.2f}% |\n"
 
-        # 找出最佳组合
-        best_combo = dual_stats.idxmax()
-        best_sim = best_combo[0][0]
-        best_heat = best_combo[0][1]
-        best_win = dual_stats.loc[(best_sim, best_heat), '胜率']
+        # 找出最佳组合（按胜率）
+        if len(dual_stats) > 0 and '胜率' in dual_stats.columns:
+            best_idx = dual_stats['胜率'].idxmax()
+            if pd.notna(best_idx):
+                best_sim, best_heat = best_idx
+                best_win = dual_stats.loc[best_idx, '胜率']
+                report += f"\n**最佳组合**: 相似度{'高' if best_sim else '低'} + 行业热度{'高' if best_heat else '低'}，胜率 {best_win:.1f}%\n"
 
-        report += f"\n**最佳组合**: 相似度{'高' if best_sim else '低'} + 行业热度{'高' if best_heat else '低'}，胜率 {best_win:.1f}%\n"
+        # 添加达到 10% 天数的对比分析
+        report += "\n"
+        report += "#### 关键问题：高热度是否能更快达到 +10%？是否有更大涨幅？\n\n"
+
+        # 比较高相似度组内，高热度 vs 低热度的差异
+        high_sim_df = df_dual[df_dual['高相似度'] == True]
+        low_heat_grp = high_sim_df[high_sim_df['高热度'] == False]
+        high_heat_grp = high_sim_df[high_sim_df['高热度'] == True]
+
+        # 达到 10% 天数对比
+        low_heat_reach = low_heat_grp['达到 +10% 天数'].dropna()
+        high_heat_reach = high_heat_grp['达到 +10% 天数'].dropna()
+
+        if len(low_heat_reach) > 0 and len(high_heat_reach) > 0:
+            low_heat_mean_days = low_heat_reach.mean()
+            high_heat_mean_days = high_heat_reach.mean()
+            days_diff = low_heat_mean_days - high_heat_mean_days
+
+            low_heat_median_days = low_heat_reach.median()
+            high_heat_median_days = high_heat_reach.median()
+
+            # 最大涨幅对比
+            low_heat_max_gain = low_heat_grp['最大涨幅'].mean()
+            high_heat_max_gain = high_heat_grp['最大涨幅'].mean()
+            gain_diff = high_heat_max_gain - low_heat_max_gain
+
+            # 最终盈亏对比
+            low_heat_return = low_heat_grp['涨跌幅'].mean()
+            high_heat_return = high_heat_grp['涨跌幅'].mean()
+            return_diff = high_heat_return - low_heat_return
+
+            report += "| 指标 | 高相似度 + 低热度 | 高相似度 + 高热度 | 差异 |\n"
+            report += "|------|----------------|----------------|------|\n"
+            report += f"| 达到 +10% 平均天数 | {low_heat_mean_days:.1f}天 (中位数:{low_heat_median_days:.1f}天) | {high_heat_mean_days:.1f}天 (中位数:{high_heat_median_days:.1f}天) | **{days_diff:+.1f}天** {'(高热度更快)' if days_diff > 0 else '(高热度更慢)'} |\n"
+            report += f"| 持股期最大涨幅 | {low_heat_max_gain:.2f}% | {high_heat_max_gain:.2f}% | **{gain_diff:+.2f}%** {'(高热度更高)' if gain_diff > 0 else '(高热度更低)'} |\n"
+            report += f"| 最终盈亏 | {low_heat_return:+.2f}% | {high_heat_return:+.2f}% | **{return_diff:+.2f}%** {'(高热度更好)' if return_diff > 0 else '(高热度更差)'} |\n"
+            report += f"| 样本数 | {len(low_heat_grp)} | {len(high_heat_grp)} | - |\n"
+
+            # 结论
+            report += "\n**结论**:\n"
+            if days_diff > 0:
+                report += f"- **达到 +10% 速度**: 高热度行业股票平均快 {days_diff:.1f} 天 ({low_heat_mean_days:.1f}天 → {high_heat_mean_days:.1f}天)\n"
+            else:
+                report += f"- **达到 +10% 速度**: 高热度行业股票平均慢 {abs(days_diff):.1f} 天 ({low_heat_mean_days:.1f}天 → {high_heat_mean_days:.1f}天)\n"
+
+            if gain_diff > 0:
+                report += f"- **最大涨幅**: 高热度行业股票平均高 {gain_diff:.2f}% ({low_heat_max_gain:.2f}% → {high_heat_max_gain:.2f}%)\n"
+            else:
+                report += f"- **最大涨幅**: 高热度行业股票平均低 {abs(gain_diff):.2f}% ({low_heat_max_gain:.2f}% → {high_heat_max_gain:.2f}%)\n"
+
+            if return_diff > 0:
+                report += f"- **最终盈亏**: 高热度行业股票平均好 {return_diff:+.2f}% ({low_heat_return:+.2f}% → {high_heat_return:+.2f}%)\n"
+            else:
+                report += f"- **最终盈亏**: 高热度行业股票平均差 {return_diff:+.2f}% ({low_heat_return:+.2f}% → {high_heat_return:+.2f}%)\n"
+
+            # 综合结论
+            report += "\n**综合判断**: "
+            positive_count = sum([days_diff > 0, gain_diff > 0, return_diff > 0])
+            if positive_count >= 2:
+                report += f"**高相似度 + 高热度组合在{positive_count}/3 个指标上优于高相似度 + 低热度**，建议优先选择高热度行业股票。\n"
+            else:
+                report += f"高热度组合优势不明显，仅{positive_count}/3 个指标占优，建议综合其他因素决策。\n"
+
+            # 行业热度变化分析（买入日 vs 涨到 10% 日）
+            report += "\n#### 行业热度变化：股票上涨时，行业热度是否也在上升？\n\n"
+
+            # 筛选有涨到 10% 数据的股票
+            reach_10_df = df_dual[df_dual['达到 +10% 天数'].notna()].copy()
+
+            if len(reach_10_df) > 0 and '行业热度_10pct 日' in reach_10_df.columns:
+                # 计算热度变化
+                reach_10_df['热度变化'] = reach_10_df['行业热度_10pct 日'] - reach_10_df['行业热度_买入日']
+
+                # 按热度变化分组
+                reach_10_df['热度上升'] = reach_10_df['热度变化'] > 0
+
+                heat_up = reach_10_df[reach_10_df['热度上升'] == True]
+                heat_down = reach_10_df[reach_10_df['热度上升'] == False]
+
+                report += "| 热度变化 | 样本数 | 平均最大涨幅 | 平均达到 10% 天数 | 胜率 |\n"
+                report += "|----------|--------|-------------|-----------------|------|\n"
+
+                if len(heat_up) > 0:
+                    up_max_gain = heat_up['最大涨幅'].mean()
+                    up_days = heat_up['达到 +10% 天数'].mean()
+                    up_win = (heat_up['涨跌幅'] > 0).sum() / len(heat_up) * 100
+                    report += f"| 热度上升 (买入→上涨) | {len(heat_up)} | {up_max_gain:.2f}% | {up_days:.1f}天 | {up_win:.1f}% |\n"
+
+                if len(heat_down) > 0:
+                    down_max_gain = heat_down['最大涨幅'].mean()
+                    down_days = heat_down['达到 +10% 天数'].mean()
+                    down_win = (heat_down['涨跌幅'] > 0).sum() / len(heat_down) * 100
+                    report += f"| 热度下降 (买入→上涨) | {len(heat_down)} | {down_max_gain:.2f}% | {down_days:.1f}天 | {down_win:.1f}% |\n"
+
+                # 结论
+                if len(heat_up) > 0 and len(heat_down) > 0:
+                    gain_diff_heat = up_max_gain - down_max_gain
+                    report += f"\n**结论**: 行业热度上升的股票，最大涨幅平均{'高' if gain_diff_heat > 0 else '低'} {abs(gain_diff_heat):.2f}%。\n"
+                    report += "这表明**股票上涨时行业热度同步上升**，验证了行业热度与个股表现的正相关性。\n"
+            else:
+                report += "*数据不足，无法分析*\n"
+
     else:
         report += "*数据不足，无法进行双重筛选分析*\n"
 
@@ -924,14 +1047,14 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
         # 跌破 -5%（需要检查是否有这个字段，没有就用 -4% 代替）
         if '触发 -4% 日期' in df.columns:
-            neg4_triggered = df[df['触发 -4% 日期'] != '']
+            neg4_triggered = df[df['触发 -4% 日期'].notna()]
             if len(neg4_triggered) > 0:
                 neg4_win = len(neg4_triggered[neg4_triggered['涨跌幅'] > 0]) / len(neg4_triggered) * 100
                 neg4_avg = neg4_triggered['涨跌幅'].mean()
                 report += f"| 跌破 -4% | {len(neg4_triggered)} | {neg4_win:.1f}% | {neg4_avg:+.2f}% |\n"
 
         # 从未跌破 -4% 的
-        never_neg4 = df[df['触发 -4% 日期'] == '']
+        never_neg4 = df[df['触发 -4% 日期'].isna()]
         if len(never_neg4) > 0:
             never_neg4_win = len(never_neg4[never_neg4['涨跌幅'] > 0]) / len(never_neg4) * 100
             never_neg4_avg = never_neg4['涨跌幅'].mean()
@@ -985,7 +1108,7 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 
     # 添加止盈策略建议
     if has_trigger_data:
-        trigger_10pct_count = (df['触发 +10% 日期'] != '').sum()
+        trigger_10pct_count = df['触发 +10% 日期'].notna().sum()
         trigger_10pct_pct = trigger_10pct_count / len(df) * 100
         report += f"""3. **引入动态止盈策略**:
    - {trigger_10pct_pct:.1f}% 的股票在持有期内曾达到过 +10% 涨幅

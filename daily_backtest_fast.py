@@ -46,22 +46,24 @@ def _process_single_day(args):
     """
     处理单个交易日的选股和收益计算（用于多进程并行）
 
-    :param args: 元组 (sel_date, stock_data_list, config_dict, top_n, hold_days)
+    :param args: 元组 (sel_date, stock_data_list, config_dict, top_n, hold_days, preloaded_data)
     :return: (day_results, day_summary)
     """
     import io
-    sel_date, stock_data_list, config_dict, top_n, hold_days = args
+    sel_date, stock_data_list, config_dict, top_n, hold_days, preloaded_data = args
 
-    # 重建策略和案例库
+    # 使用主进程预加载的数据（避免重复加载）
     strategy = FastDailyBacktestStrategy()
-    csv_manager = CSVManager(Path(config_dict['data_path']))
-    strategy.csv_manager = csv_manager
-    strategy._build_case_library(csv_manager)
+    strategy.cases = preloaded_data['cases']
+    strategy.csv_manager = CSVManager(Path(config_dict['data_path']))
 
-    # 初始化行业数据获取器和热度计算器
+    # 初始化行业数据获取器（使用预加载的行业映射）
     industry_fetcher = IndustryFetcher(Path(config_dict['data_path']) / 'industry_cache')
-    industry_fetcher.load_industry_mapping()
-    industry_calc = IndustryHeatCalculator(industry_fetcher)
+    industry_fetcher.stock_industry_map = preloaded_data['industry_map']
+    industry_fetcher.industry_stocks_map = preloaded_data['industry_stocks_map']
+
+    # 使用预计算的行业热度缓存
+    industry_heats_cache = preloaded_data.get('industry_heats', {})
 
     # 将列表转换回字典
     stock_data_dict = {}
@@ -193,38 +195,50 @@ def _process_single_day(args):
             trigger_neg4pct_date = None
             first_reach_order = None
 
-        # 计算行业热度
-        industry = industry_fetcher.get_industry_for_stock(code)
+        # 计算行业热度（使用预计算缓存）
+        # 从内置映射获取行业（不使用网络）
+        industry = industry_fetcher.get_industry_for_stock(code, refresh_if_missing=False)
 
-        # 计算买入日的行业热度
+        # 日期格式转换为字符串
+        def date_to_str(d):
+            if isinstance(d, str):
+                return d
+            return d.strftime('%Y-%m-%d')
+
+        # 从缓存获取买入日的行业热度
         industry_heat_buy = None
         if industry:
-            industry_heat_buy = industry_calc.calculate_industry_heat(
-                industry, actual_date, stock_data_dict, list(stock_data_dict.keys()))
+            date_str = date_to_str(actual_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_buy = industry_heats_cache[industry][date_str]
 
         # 达到 +10% 日的行业热度
         industry_heat_10pct = None
         if trigger_10pct_date and industry:
-            industry_heat_10pct = industry_calc.calculate_industry_heat(
-                industry, trigger_10pct_date, stock_data_dict, list(stock_data_dict.keys()))
+            date_str = date_to_str(trigger_10pct_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_10pct = industry_heats_cache[industry][date_str]
 
         # 达到 -2% 日的行业热度
         industry_heat_neg2pct = None
         if trigger_neg2pct_date and industry:
-            industry_heat_neg2pct = industry_calc.calculate_industry_heat(
-                industry, trigger_neg2pct_date, stock_data_dict, list(stock_data_dict.keys()))
+            date_str = date_to_str(trigger_neg2pct_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_neg2pct = industry_heats_cache[industry][date_str]
 
         # 达到 -4% 日的行业热度
         industry_heat_neg4pct = None
         if trigger_neg4pct_date and industry:
-            industry_heat_neg4pct = industry_calc.calculate_industry_heat(
-                industry, trigger_neg4pct_date, stock_data_dict, list(stock_data_dict.keys()))
+            date_str = date_to_str(trigger_neg4pct_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_neg4pct = industry_heats_cache[industry][date_str]
 
         # 卖出日的行业热度
         industry_heat_sell = None
         if actual_sell_date and industry:
-            industry_heat_sell = industry_calc.calculate_industry_heat(
-                industry, actual_sell_date, stock_data_dict, list(stock_data_dict.keys()))
+            date_str = date_to_str(actual_sell_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_sell = industry_heats_cache[industry][date_str]
 
         day_results.append({
             'selection_date': str(sel_date),
@@ -324,7 +338,15 @@ class FastDailyBacktestStrategy(BowlReboundStrategy):
             except Exception as e:
                 continue
 
-        print(f"  ✓ 案例库加载完成：{len(self.cases)} 个案例")
+        # 使用进程 ID 控制打印，避免多进程重复输出
+        import os
+        worker_id = os.environ.get('WORKER_ID', os.getpid())
+        if not hasattr(FastDailyBacktestStrategy, '_case_lib_printed'):
+            FastDailyBacktestStrategy._case_lib_printed = set()
+        if worker_id not in FastDailyBacktestStrategy._case_lib_printed:
+            FastDailyBacktestStrategy._case_lib_printed.add(worker_id)
+            if len(FastDailyBacktestStrategy._case_lib_printed) == 1:
+                print(f"  ✓ 案例库加载完成：{len(self.cases)} 个案例")
 
     def rank_stocks_single_date(self, stock_data_dict, target_date, precomputed_indicators=None):
         """
@@ -621,6 +643,27 @@ class FastDailyBacktester:
                 print(f"  已缓存 {i + 1}/{len(stock_codes)}...")
         print(f"✓ 缓存完成，共 {len(stock_data_dict)} 只股票\n")
 
+        # 在主进程中预加载案例库和行业映射（避免子进程重复加载）
+        print("主进程预加载案例库和行业映射...")
+        self.strategy._build_case_library(self.csv_manager)
+        cases_data = self.strategy.cases
+
+        # 初始化行业数据获取器并加载行业映射
+        industry_cache_dir = self.csv_manager.data_dir / 'industry_cache'
+        industry_fetcher = IndustryFetcher(industry_cache_dir)
+        industry_fetcher.load_industry_mapping(force_refresh=False)
+        # 合并内置映射，扩展行业覆盖
+        industry_fetcher._merge_builtin_industry_map()
+        print(f"  ✓ 行业映射加载完成：{len(industry_fetcher.stock_industry_map)} 只股票")
+
+        # 准备要传递给子进程的预加载数据
+        preloaded_data = {
+            'cases': cases_data,
+            'industry_map': industry_fetcher.stock_industry_map,
+            'industry_stocks_map': industry_fetcher.industry_stocks_map,
+            'industry_heats': {}  # 预计算的行业热度缓存
+        }
+
         # 准备并行处理数据 - 将 DataFrame 转换为可序列化的格式
         # 使用 pickle 序列化 DataFrame 以减少内存占用
         import io
@@ -636,9 +679,49 @@ class FastDailyBacktester:
             'hold_days': self.config.hold_days
         }
 
-        # 准备任务列表
+        # 预计算所有行业在所有交易日的热度（在主进程完成，避免子进程重复计算）
+        print("主进程预计算行业热度...")
+
+        # 首先预计算所有股票在所有交易日的成交额（加速行业热度计算）
+        trading_dates_str = [d.strftime('%Y-%m-%d') for d in trading_dates]
+        all_stocks = list(stock_data_dict.keys())
+
+        # 构建 {date: {code: turnover}} 的成交额缓存
+        print("  预计算股票成交额...")
+        turnover_cache = {}  # {date_str: {code: turnover}}
+        for date_str in trading_dates_str:
+            turnover_cache[date_str] = {}
+            for code in all_stocks:
+                name, df = stock_data_dict[code]
+                row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
+                if not row.empty:
+                    # 优先使用 amount，否则用 volume * price * 100 估算
+                    val = row['amount'].iloc[0] if 'amount' in row.columns else None
+                    if pd.notna(val) and val > 0:
+                        turnover_cache[date_str][code] = val
+                    else:
+                        vol = row['volume'].iloc[0] if 'volume' in row.columns else 0
+                        price = row['close'].iloc[0] if 'close' in row.columns else 0
+                        if vol > 0 and price > 0:
+                            turnover_cache[date_str][code] = vol * price * 100
+
+        print(f"  ✓ 成交额预计算完成：{len(turnover_cache)} 天")
+
+        # 为每个行业预计算热度（使用成交额缓存加速）
+        industry_cache = IndustryHeatCalculator(industry_fetcher)
+        industries_to_compute = list(industry_fetcher.industry_stocks_map.keys())[:50]
+        for ind_name in industries_to_compute:
+            preloaded_data['industry_heats'][ind_name] = {}
+            for date_str in trading_dates_str:
+                heat = industry_cache.calculate_industry_heat_fast(
+                    ind_name, date_str, turnover_cache, all_stocks)
+                if heat is not None:
+                    preloaded_data['industry_heats'][ind_name][date_str] = heat
+        print(f"  ✓ 行业热度预计算完成：{len(preloaded_data['industry_heats'])} 个行业")
+
+        # 准备任务列表（添加预加载数据）
         tasks = [
-            (sel_date, stock_data_list, config_dict, self.config.top_n, self.config.hold_days)
+            (sel_date, stock_data_list, config_dict, self.config.top_n, self.config.hold_days, preloaded_data)
             for sel_date in trading_dates
         ]
 
