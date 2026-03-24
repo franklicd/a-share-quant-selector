@@ -610,7 +610,7 @@ class FeishuNotifier:
         
         # 构建Markdown消息
         lines = [
-            "## 选股结果（按B1完美图形相似度排序）",
+            "## 选股结果（按B1完美图形相似度 + 行业热度排序）",
             "",
             f"时间: {now}",
             f"策略筛选: {total_selected} 只 | B1 Top匹配: {len(results)} 只",
@@ -637,8 +637,28 @@ class FeishuNotifier:
             close = r.get('close', '-')
             j_val = r.get('J', '-')
             breakdown = r.get('breakdown', {})
+            # 新增行业信息
+            industry = r.get('industry', '未知')
+            industry_heat = r.get('industry_heat')
+
+            # 行业热度显示
+            if industry_heat is not None:
+                if industry_heat >= 70:
+                    heat_emoji = '🔥'
+                    heat_label = f'{industry_heat}分 (高热度)'
+                elif industry_heat >= 50:
+                    heat_emoji = '📈'
+                    heat_label = f'{industry_heat}分 (中等)'
+                else:
+                    heat_emoji = '❄️'
+                    heat_label = f'{industry_heat}分 (冷门)'
+            else:
+                heat_emoji = '❓'
+                heat_label = 'N/A'
+
             
-            lines.append(f"{rank} **{stock_code}** {stock_name}  **相似度: {score}%**")
+            lines.append(f"{rank} **{stock_code}** {stock_name}  **相似度：{score}%**")
+            lines.append(f"   行业：{heat_emoji} {industry} ({heat_label})")
             lines.append(f"   匹配: {matched_case} ({matched_date})")
             
             trend_score = breakdown.get('trend_structure', 0)
@@ -654,6 +674,9 @@ class FeishuNotifier:
         lines.append("---")
         lines.append("**B1匹配逻辑**: 基于双线+量比+形态三维相似度")
         lines.append("**案例来源**: 10个历史成功案例")
+        lines.append("")
+        lines.append("**行业热度说明**: 🔥高热度 (≥70 分) | 📈中等 (50-70 分) | ❄️冷门 (<50 分)")
+        lines.append("**决策建议**: 优先选择高相似度 + 高热度的股票，避免冷门行业")
         
         content = "\n".join(lines)
         
