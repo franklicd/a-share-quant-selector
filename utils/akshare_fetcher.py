@@ -470,8 +470,50 @@ class AKShareFetcher:
             print(f"  HTTP获取历史数据失败: {e}")
             return None
     
+    def _get_tushare_token(self):
+        """
+        获取 tushare token
+        优先级：配置文件 > 环境变量
+        """
+        import os
+        # 1. 从配置文件读取
+        try:
+            config_file = Path(__file__).parent.parent / 'config' / 'config.yaml'
+            if config_file.exists():
+                import yaml
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = yaml.safe_load(f)
+                token = config.get('tushare', {}).get('token')
+                if token:
+                    return token
+        except:
+            pass
+        
+        # 2. 从环境变量读取
+        return os.environ.get('TUSHARE_TOKEN')
+    
     def _get_realtime_market_cap(self, stock_code):
-        """从实时数据获取总市值"""
+        """从 tushare 获取总市值"""
+        try:
+            ts_token = self._get_tushare_token()
+            if ts_token:
+                ts.set_token(ts_token)
+                pro = ts.pro_api()
+                
+                # 确定市场标识
+                if stock_code.startswith('6'):
+                    ts_code = f"{stock_code}.SH"
+                else:
+                    ts_code = f"{stock_code}.SZ"
+                
+                # 获取实时行情
+                df = pro.daily_basic(ts_code=ts_code, fields=['ts_code', 'trade_date', 'total_mv'])
+                if df is not None and not df.empty:
+                    total_cap = df['total_mv'].iloc[0]  # 总市值（万元）
+                    return float(total_cap) * 10000  # 转换为元
+        except Exception as e:
+            print(f"  获取总市值失败：{e}")
+        return None
         try:
             import akshare as ak
             spot_df = ak.stock_individual_info_em(symbol=stock_code)
@@ -539,47 +581,44 @@ class AKShareFetcher:
         前复权，按日期倒序排列
         
         数据源优先级：
-        1. akshare（提供完整的成交额字段）
+        1. tushare（提供完整的成交额字段）
         2. 腾讯 HTTP 接口（作为 fallback）
         """
-        import akshare as ak
-
-        # 方法 1: 优先使用 akshare（数据更完整，有成交额字段）
+        # 方法 1: 优先使用 tushare（数据更完整，有成交额字段）
         try:
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=365 * years)
-            start_str = start_date.strftime("%Y%m%d")
-            end_str = end_date.strftime("%Y%m%d")
-            
-            df = ak.stock_zh_a_hist(
-                symbol=stock_code,
-                period="daily",
-                start_date=start_str,
-                end_date=end_str,
-                adjust="qfq"
-            )
-            
-            if df is not None and not df.empty:
-                df = df.rename(columns={
-                    '日期': 'date', '开盘': 'open', '最高': 'high', '最低': 'low',
-                    '收盘': 'close', '成交量': 'volume', '成交额': 'amount', '换手率': 'turnover'
-                })
-                df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'turnover']]
-                # 获取总市值（失败不影响返回数据）
-                try:
-                    market_cap = self._get_realtime_market_cap(stock_code)
-                    if market_cap:
-                        df['market_cap'] = market_cap
-                    else:
-                        df['market_cap'] = (hash(stock_code) % 100 + 50) * 1000000000
-                except:
-                    df['market_cap'] = (hash(stock_code) % 100 + 50) * 1000000000
-                df['date'] = pd.to_datetime(df['date'])
-                df = df.sort_values('date', ascending=False)
-                print(f"✓ (akshare 获取 {len(df)}条)")
-                return df
+            # 从配置或环境变量获取 token
+            ts_token = self._get_tushare_token()
+            if ts_token:
+                ts.set_token(ts_token)
+                pro = ts.pro_api()
+                
+                end_date = datetime.now().strftime("%Y%m%d")
+                start_date = (datetime.now() - timedelta(days=365 * years)).strftime("%Y%m%d")
+                
+                # 确定市场标识
+                if stock_code.startswith('6'):
+                    ts_code = f"{stock_code}.SH"
+                else:
+                    ts_code = f"{stock_code}.SZ"
+                
+                df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
+                
+                if df is not None and not df.empty:
+                    # tushare 字段映射
+                    df = df.rename(columns={
+                        'trade_date': 'date', 'open': 'open', 'high': 'high', 
+                        'low': 'low', 'close': 'close', 'vol': 'volume', 
+                        'amount': 'amount', 'turnover_ratio': 'turnover'
+                    })
+                    df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'turnover']]
+                    df['date'] = pd.to_datetime(df['date'])
+                    df = df.sort_values('date', ascending=False)
+                    print(f"✓ (tushare 获取 {len(df)}条)")
+                    return df
+            else:
+                print("  未配置 tushare token，尝试 HTTP 接口...")
         except Exception as e:
-            print(f"  akshare 异常：{e}，尝试 HTTP 接口...")
+            print(f"  tushare 异常：{e}，尝试 HTTP 接口...")
         
         # 方法 2: 降级到 HTTP 接口（腾讯）
         try:
@@ -699,39 +738,33 @@ class AKShareFetcher:
         if max_stocks:
             stock_codes = stock_codes[:max_stocks]
         
-        # 批量获取市值数据（主接口：腾讯，备选：akshare）
+        # 批量获取市值数据（主接口：tushare，备选：腾讯）
         print("\n正在批量获取市值数据...")
         market_cap_map = {}
 
-        # 方法 1: 优先使用腾讯接口
+        # 方法 1: 优先使用 tushare
         try:
-            print("  尝试腾讯接口获取市值...")
-            market_cap_map = self._fetch_market_cap_tencent(stock_codes)
+            print("  尝试 tushare 接口获取市值...")
+            market_cap_map = self._fetch_market_cap_tushare(stock_codes)
             if market_cap_map:
-                print(f"  ✓ 腾讯接口成功：{len(market_cap_map)} 只股票市值")
+                print(f"  ✓ tushare 接口成功：{len(market_cap_map)} 只股票市值")
             else:
-                print("  腾讯接口返回空，尝试 akshare 备选接口...")
+                print("  tushare 接口返回空，尝试腾讯备选接口...")
         except Exception as e:
-            print(f"  腾讯接口失败：{e}")
-            print("  尝试 akshare 备选接口...")
+            print(f"  tushare 接口失败：{e}")
+            print("  尝试腾讯备选接口...")
 
-        # 方法 2: akshare 备选
+        # 方法 2: 腾讯 fallback
         if not market_cap_map:
             try:
-                spot_df = ak.stock_zh_a_spot_em()
-                for _, row in spot_df.iterrows():
-                    code = str(row['代码']).zfill(6)
-                    cap = row['总市值']
-                    if pd.notna(cap) and cap > 0:
-                        # 统一转为元
-                        if cap < 1e10:
-                            cap = int(cap * 1e8)
-                        else:
-                            cap = int(cap)
-                        market_cap_map[code] = cap
-                print(f"  ✓ akshare 接口成功：{len(market_cap_map)} 只股票市值")
+                print("  尝试腾讯接口获取市值...")
+                market_cap_map = self._fetch_market_cap_tencent(stock_codes)
+                if market_cap_map:
+                    print(f"  ✓ 腾讯接口成功：{len(market_cap_map)} 只股票市值")
+                else:
+                    print("  ✗ 市值数据将缺失")
             except Exception as e:
-                print(f"  akshare 接口也失败：{e}")
+                print(f"  腾讯接口也失败：{e}")
                 print("  ✗ 市值数据将缺失")
         
         print(f"\n开始抓取 {len(stock_codes)} 只股票的6年历史数据...")
