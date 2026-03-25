@@ -149,7 +149,7 @@ class AKShareFetcher:
                             continue
                 
                 if i % 500 == 0 and i > 0:
-                    print(f"  已获取 {i}/{total} 只市值...")
+                    print(f"  已获取 {i}/{len(stock_codes)} 只市值...")
                     time.sleep(0.1)
                     
         except Exception as e:
@@ -537,19 +537,14 @@ class AKShareFetcher:
         """
         抓取单只股票历史数据
         前复权，按日期倒序排列
-        """
-        # 方法1: 直接HTTP请求
-        try:
-            df = self._fetch_stock_history_http(stock_code, years)
-            if df is not None and not df.empty:
-                print(f"✓ (HTTP获取 {len(df)}条)")
-                return df
-            else:
-                print(f"  HTTP返回空数据，尝试akshare...")
-        except Exception as e:
-            print(f"  HTTP异常: {e}，尝试akshare...")
         
-        # 方法2: akshare
+        数据源优先级：
+        1. akshare（提供完整的成交额字段）
+        2. 腾讯 HTTP 接口（作为 fallback）
+        """
+        import akshare as ak
+
+        # 方法 1: 优先使用 akshare（数据更完整，有成交额字段）
         try:
             end_date = datetime.now()
             start_date = end_date - timedelta(days=365 * years)
@@ -570,21 +565,34 @@ class AKShareFetcher:
                     '收盘': 'close', '成交量': 'volume', '成交额': 'amount', '换手率': 'turnover'
                 })
                 df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'turnover']]
-                # 从实时数据获取总市值
-                market_cap = self._get_realtime_market_cap(stock_code)
-                if market_cap:
-                    df['market_cap'] = market_cap
-                else:
+                # 获取总市值（失败不影响返回数据）
+                try:
+                    market_cap = self._get_realtime_market_cap(stock_code)
+                    if market_cap:
+                        df['market_cap'] = market_cap
+                    else:
+                        df['market_cap'] = (hash(stock_code) % 100 + 50) * 1000000000
+                except:
                     df['market_cap'] = (hash(stock_code) % 100 + 50) * 1000000000
                 df['date'] = pd.to_datetime(df['date'])
                 df = df.sort_values('date', ascending=False)
+                print(f"✓ (akshare 获取 {len(df)}条)")
                 return df
         except Exception as e:
-            print(f"  akshare获取失败，使用模拟数据...")
+            print(f"  akshare 异常：{e}，尝试 HTTP 接口...")
         
-        # 降级: 使用模拟数据
+        # 方法 2: 降级到 HTTP 接口（腾讯）
+        try:
+            df = self._fetch_stock_history_http(stock_code, years)
+            if df is not None and not df.empty:
+                print(f"✓ (HTTP 获取 {len(df)}条)")
+                return df
+        except Exception as e:
+            print(f"  HTTP 异常：{e}，使用模拟数据...")
+        
+        # 降级：使用模拟数据
         return self._generate_mock_data(stock_code, years)
-    
+
     def fetch_stock_update(self, stock_code, days=10):
         """
         抓取近期数据用于增量更新
@@ -726,11 +734,14 @@ class AKShareFetcher:
                 print(f"  akshare 接口也失败：{e}")
                 print("  ✗ 市值数据将缺失")
         
-        print(f"\n开始抓取 {total} 只股票的6年历史数据...")
+        print(f"\n开始抓取 {len(stock_codes)} 只股票的6年历史数据...")
         print("=" * 60)
+        success = 0
+        failed_list = []
+        failed = 0
         
         for i, code in enumerate(stock_codes, 1):
-            print(f"[{i}/{total}] 抓取 {code} {stock_dict.get(code, '')} ...", end=" ")
+            print(f"[{i}/{len(stock_codes)}] 抓取 {code} {stock_dict.get(code, '')} ...", end=" ")
             
             df = self.fetch_stock_history(code, years=6)
             
@@ -797,7 +808,7 @@ class AKShareFetcher:
         failed = 0
         skipped = 0
         
-        print(f"\n开始更新 {total} 只股票的数据...")
+        print(f"\n开始更新 {len(stock_codes)} 只股票的数据...")
         print("=" * 60)
         
         today = datetime.now().date()

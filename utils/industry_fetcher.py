@@ -5,6 +5,7 @@
 功能：
 1. 从多源获取股票所属行业的完整映射关系（东方财富 HTTP 接口优先，akshare 备选）
 2. 计算行业热度指标（复合版：成交额占比 + 成交额环比）
+3. 成交额持久化缓存（历史数据不变，一次计算永久使用）
 
 热度计算公式：
 行业热度 = 0.6 × 成交额占比分位数 + 0.4 × 成交额环比
@@ -17,6 +18,7 @@
 """
 import json
 import time
+import io
 import requests
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -508,19 +510,24 @@ class IndustryFetcher:
             url = 'https://push2.eastmoney.com/api/qt/stock/get'
             params = {
                 'secid': secid,
-                'fields': 'f58,f59,f124,f128'  # f124=行业，f128=概念
+                'fields': 'f58,f59,f124,f127,f128'  # f124=行业代码，f127=行业名称，f128=概念
             }
 
             resp = requests.get(url, headers=headers, params=params, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 if data.get('data'):
-                    # f124 是行业名称
-                    industry = data['data'].get('f124', '')
+                    # 优先使用 f127（行业名称），如果为空则使用 f124（行业代码）
+                    industry = data['data'].get('f127', '')
+                    if not industry:
+                        industry = data['data'].get('f124', '')
                     if industry:
                         # 清理行业名称，去掉"行业"等后缀
-                        industry = industry.replace('行业', '').strip()
-                        return industry if industry else None
+                        industry = str(industry).replace('行业', '').strip()
+                        # 如果行业名为"0"或空字符串，返回 None
+                        if industry in ('0', '', '0.0'):
+                            return None
+                        return industry
         except Exception as e:
             print(f"  ⚠️ 获取 {stock_code} 行业失败：{e}")
 
@@ -733,7 +740,7 @@ class IndustryHeatCalculator:
             'heat': heats
         })
 
-    def calculate_industry_heat_fast(self, industry_name, date, turnover_cache, all_market_stocks=None):
+    def calculate_industry_heat_fast(self, industry_name, date, turnover_cache, all_market_stocks=None, stock_data_dict=None):
         """
         使用预计算的成交额缓存计算行业热度（快速版本）
 
@@ -741,6 +748,7 @@ class IndustryHeatCalculator:
         :param date: 日期字符串 (str)
         :param turnover_cache: {date_str: {code: turnover}} 成交额缓存
         :param all_market_stocks: 全市场股票代码列表
+        :param stock_data_dict: 股票数据字典（可选，用于 fallback 计算）
         :return: 热度分数 (0-100)，计算失败返回 None
         """
         # 获取行业成分股
@@ -749,8 +757,12 @@ class IndustryHeatCalculator:
         if not industry_stocks:
             return None
 
-        # 获取该日期的成交额数据
+        # 获取该日期的成交额数据（必须是指定日期，不能用其他日期替代）
         date_turnover = turnover_cache.get(date, {})
+
+        # 如果指定日期没有数据，返回 None（不使用其他日期替代）
+        if not date_turnover:
+            return None
 
         # 1. 计算行业今日总成交额
         industry_turnover = 0
@@ -835,3 +847,184 @@ if __name__ == '__main__':
         if industry:
             stocks = fetcher.get_stocks_in_industry(industry)
             print(f"{industry} 行业内股票数量：{len(stocks)}")
+
+
+class TurnoverCache:
+    """
+    成交额持久化缓存管理器
+
+    成交额是历史不变数据，一旦计算完成永久有效，适合持久化存储
+    缓存格式：{date_str: {code: turnover}}
+
+    缓存文件：data/cache/turnover_cache.pkl
+    缓存策略：增量更新（只添加新的交易日数据）
+    """
+
+    def __init__(self, cache_dir=None):
+        if cache_dir is None:
+            cache_dir = Path(__file__).parent.parent / 'data' / 'cache'
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_file = self.cache_dir / 'turnover_cache.pkl'
+        self.meta_file = self.cache_dir / 'turnover_cache_meta.json'
+        self.cache = {}  # {date_str: {code: turnover}}
+        self.metadata = {}  # 缓存元数据
+
+    def load(self):
+        """
+        从磁盘加载缓存
+        :return: 是否加载成功
+        """
+        if not self.cache_file.exists():
+            return False
+
+        try:
+            # 加载缓存数据
+            self.cache = pd.read_pickle(self.cache_file)
+
+            # 加载元数据
+            if self.meta_file.exists():
+                with open(self.meta_file, 'r', encoding='utf-8') as f:
+                    self.metadata = json.load(f)
+
+            print(f"  ✓ 从缓存加载成交额数据：{len(self.cache)} 个交易日")
+            return True
+
+        except Exception as e:
+            print(f"  ⚠️ 加载成交额缓存失败：{e}")
+            return False
+
+    def save(self):
+        """保存缓存到磁盘"""
+        try:
+            # 保存缓存数据
+            buffer = io.BytesIO()
+            pd.to_pickle(self.cache, buffer)
+            with open(self.cache_file, 'wb') as f:
+                f.write(buffer.getvalue())
+
+            # 保存元数据
+            self.metadata['last_updated'] = datetime.now().isoformat()
+            self.metadata['date_count'] = len(self.cache)
+
+            # 计算覆盖的股票数量
+            all_codes = set()
+            for date_data in self.cache.values():
+                all_codes.update(date_data.keys())
+            self.metadata['stock_count'] = len(all_codes)
+
+            with open(self.meta_file, 'w', encoding='utf-8') as f:
+                json.dump(self.metadata, f, ensure_ascii=False, indent=2)
+
+            print(f"  ✓ 保存成交额缓存：{len(self.cache)} 个交易日，{self.metadata['stock_count']} 只股票")
+
+        except Exception as e:
+            print(f"  ⚠️ 保存成交额缓存失败：{e}")
+
+    def get(self, date_str, code):
+        """
+        获取单只股票在指定日期的成交额
+        :param date_str: 日期字符串 (YYYY-MM-DD)
+        :param code: 股票代码
+        :return: 成交额，不存在返回 None
+        """
+        if date_str not in self.cache:
+            return None
+        return self.cache[date_str].get(code)
+
+    def has_date(self, date_str):
+        """检查指定日期的数据是否在缓存中"""
+        return date_str in self.cache
+
+    def has_stock_on_date(self, code, date_str):
+        """检查指定股票在指定日期的数据是否在缓存中"""
+        return date_str in self.cache and code in self.cache[date_str]
+
+    def update_date(self, date_str, stock_data_dict, all_stocks):
+        """
+        更新指定日期的成交额数据
+        :param date_str: 日期字符串
+        :param stock_data_dict: 股票数据字典 {code: (name, df)}
+        :param all_stocks: 股票代码列表
+        """
+        if date_str not in self.cache:
+            self.cache[date_str] = {}
+
+        for code in all_stocks:
+            if code in self.cache[date_str]:
+                continue  # 已存在，跳过
+
+            name, df = stock_data_dict[code]
+            row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
+
+            if not row.empty:
+                # 优先使用 amount，否则用 volume * price * 100 估算
+                val = row['amount'].iloc[0] if 'amount' in row.columns else None
+                if pd.notna(val) and val > 0:
+                    self.cache[date_str][code] = val
+                else:
+                    vol = row['volume'].iloc[0] if 'volume' in row.columns else 0
+                    price = row['close'].iloc[0] if 'close' in row.columns else 0
+                    if vol > 0 and price > 0:
+                        self.cache[date_str][code] = vol * price * 100
+
+    def get_date_turnover_dict(self, date_str):
+        """
+        获取指定日期所有股票的成交额字典
+        :param date_str: 日期字符串
+        :return: {code: turnover}
+        """
+        return self.cache.get(date_str, {})
+
+    def get_cache(self):
+        """获取完整的缓存数据"""
+        return self.cache
+
+    def ensure_date_turnover(self, date_str, stock_data_dict, all_stocks):
+        """
+        确保指定日期的成交额数据存在，如果缓存中没有则从股票数据中动态获取
+        :param date_str: 日期字符串 (YYYY-MM-DD)
+        :param stock_data_dict: 股票数据字典 {code: df} 或 {code: (name, df)}
+        :param all_stocks: 股票代码列表
+        :return: {code: turnover} 成交额字典
+        """
+        # 如果缓存中已有该日期数据，直接返回
+        if date_str in self.cache and self.cache[date_str]:
+            return self.cache[date_str]
+
+        # 从股票数据中动态计算该日期的成交额
+        print(f"  [TurnoverCache] 缓存中无 {date_str} 数据，从股票数据中动态获取...")
+        date_turnover = {}
+
+        for code in all_stocks:
+            if code not in stock_data_dict:
+                continue
+
+            # 支持两种格式：{code: df} 或 {code: (name, df)}
+            stock_data = stock_data_dict[code]
+            if isinstance(stock_data, tuple):
+                df = stock_data[1]
+            else:
+                df = stock_data
+
+            row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
+
+            if not row.empty:
+                # 优先使用 amount，否则用 volume * price * 100 估算
+                val = row['amount'].iloc[0] if 'amount' in row.columns else None
+                if pd.notna(val) and val > 0:
+                    date_turnover[code] = val
+                else:
+                    vol = row['volume'].iloc[0] if 'volume' in row.columns else 0
+                    price = row['close'].iloc[0] if 'close' in row.columns else 0
+                    if vol > 0 and price > 0:
+                        date_turnover[code] = vol * price * 100
+
+        # 如果成功获取到数据，保存到缓存
+        if date_turnover:
+            self.cache[date_str] = date_turnover
+            print(f"  [TurnoverCache] 成功获取 {date_str} 的成交额数据：{len(date_turnover)} 只股票")
+            # 保存到磁盘
+            self.save()
+
+        return date_turnover

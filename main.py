@@ -77,6 +77,46 @@ class QuantSystem:
         """初始化通知器（使用OpenClaw内置推送，不需要配置webhook）"""
         return FeishuNotifier()  # 无需任何参数，直接发送到当前飞书对话
     
+    def _fetch_date_turnover_from_csv(self, date_str, stock_codes):
+        """
+        从 CSV 文件获取指定日期的成交额数据
+        :param date_str: 日期字符串 (YYYY-MM-DD)
+        :param stock_codes: 股票代码列表
+        :return: {code: turnover} 成交额字典
+        """
+        import pandas as pd
+        date_turnover = {}
+        valid_count = 0
+        processed = 0
+
+        # 从 CSV 读取股票数据
+        for code in stock_codes:
+            df = self.csv_manager.read_stock(code)
+            if df is not None and not df.empty:
+                df = df.copy()
+                df['date'] = pd.to_datetime(df['date'])
+                # 检查是否有指定日期的数据
+                latest_date = df['date'].max()
+                if latest_date.strftime('%Y-%m-%d') >= date_str:
+                    row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
+                    if not row.empty:
+                        val = row['amount'].iloc[0] if 'amount' in row.columns else None
+                        if pd.notna(val) and val > 0:
+                            date_turnover[code] = val
+                            valid_count += 1
+                        else:
+                            vol = row['volume'].iloc[0] if 'volume' in row.columns else 0
+                            price = row['close'].iloc[0] if 'close' in row.columns else 0
+                            if vol > 0 and price > 0:
+                                date_turnover[code] = vol * price * 100
+                                valid_count += 1
+            processed += 1
+            if processed % 1000 == 0:
+                print(f"    已处理 {processed}/{len(stock_codes)}...")
+
+        print(f"  ✓ 从 CSV 获取到 {valid_count} 只股票的成交额")
+        return date_turnover
+
     def _load_stock_names(self, stock_data):
         """加载股票名称（优先从CSV文件）"""
         names_file = Path(self.data_dir) / 'stock_names.json'
@@ -403,7 +443,7 @@ class QuantSystem:
 
         return results
     
-    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None):
+    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None, pick_date=None, use_cache=False):
         """
         执行选股 + B1完美图形匹配排序
         
@@ -471,33 +511,108 @@ class QuantSystem:
         # 3. 对每只候选股进行匹配
         print("\n[3/3] 执行B1完美图形匹配...")
         matched_results = []
-        
+
+        # 初始化行业数据获取器（用于获取行业和行业热度）
+        import pandas as pd
+        from utils.industry_fetcher import IndustryFetcher, IndustryHeatCalculator, TurnoverCache
+        industry_fetcher = IndustryFetcher(Path(self.data_dir) / 'industry_cache')
+        industry_fetcher.load_industry_mapping(force_refresh=not use_cache)
+
+        # 获取选股日期（优先使用传入的 pick_date 参数）
+        pick_date_str = None
+        if pick_date:
+            from datetime import datetime
+            if isinstance(pick_date, datetime):
+                pick_date_str = pick_date.strftime('%Y-%m-%d')
+            elif isinstance(pick_date, str):
+                pick_date_str = pick_date
+            print(f"  使用传入的选股日期：{pick_date_str}")
+        else:
+            # 从信号中获取日期
+            from datetime import datetime
+            for strategy_name, signals in results.items():
+                if signals:
+                    for sig in signals:
+                        s = sig['signals'][0] if sig.get('signals') else {}
+                        # 尝试多个可能的日期字段
+                        signal_date = s.get('actual_date') or s.get('date')
+                        if signal_date:
+                            if isinstance(signal_date, datetime):
+                                pick_date_str = signal_date.strftime('%Y-%m-%d')
+                            elif isinstance(signal_date, str):
+                                pick_date_str = signal_date
+                            break
+                    if pick_date_str:
+                        break
+
+        # 确定用于行业热度计算的日期（使用传入的 pick_date）
+        heat_calc_date = pick_date_str
+        if not heat_calc_date:
+            print("  ℹ️  未指定选股日期，行业热度将显示 N/A")
+
+        # 加载成交额缓存（用于行业热度计算）
+        turnover_cache_manager = TurnoverCache()
+        if turnover_cache_manager.load():
+            turnover_cache = turnover_cache_manager.get_cache()
+        else:
+            turnover_cache = {}
+
+        # 确保选股日期的成交额数据存在（从全市场股票获取）
+        if heat_calc_date:
+            print(f"\n[行业热度] 获取 {heat_calc_date} 的全市场成交额数据...")
+            # 从 CSV 加载全市场股票代码
+            all_stock_codes = self.csv_manager.list_all_stocks()
+            print(f"  全市场股票数：{len(all_stock_codes)}")
+
+            # 从 CSV 计算成交额（处理全部股票）
+            print("  从 CSV 计算成交额 (这可能需要几分钟)...")
+            date_turnover = self._fetch_date_turnover_from_csv(heat_calc_date, all_stock_codes)
+
+            # 保存到缓存
+            if date_turnover:
+                turnover_cache_manager.cache[heat_calc_date] = date_turnover
+                turnover_cache_manager.save()
+                turnover_cache = turnover_cache_manager.get_cache()
+                print(f"  ✓ 行业热度使用日期：{heat_calc_date} ({len(date_turnover)}只股票)")
+            else:
+                print(f"  ⚠️ 未能获取 {heat_calc_date} 的成交额数据")
+
         for strategy_name, signals in results.items():
             for signal in signals:
                 code = signal['code']
                 name = signal.get('name', stock_names.get(code, '未知'))
-                
+
                 # 获取该股票的完整数据
                 if code not in stock_data_dict:
                     continue
-                
+
                 df = stock_data_dict[code]
                 if df.empty:
                     continue
-                
+
                 try:
                     # 匹配最佳案例（使用指定回看天数）
                     match_result = library.find_best_match(code, df, lookback_days=lookback_days)
-                    
+
                     if match_result.get('best_match'):
                         best = match_result['best_match']
                         score = best.get('similarity_score', 0)
-                        
+
                         # 只保留超过阈值的股票
                         if score >= min_similarity:
                             # 获取第一个信号的信息
                             s = signal['signals'][0] if signal.get('signals') else {}
-                            
+
+                            # 获取行业信息（如果缓存中没有，尝试从 API 获取）
+                            industry = industry_fetcher.get_industry_for_stock(code, refresh_if_missing=True)
+
+                            # 获取行业热度（使用选股日期和成交额缓存）
+                            industry_heat = None
+                            if industry and pick_date_str:
+                                heat_calc = IndustryHeatCalculator(industry_fetcher)
+                                industry_heat = heat_calc.calculate_industry_heat_fast(
+                                    industry, pick_date_str, turnover_cache, list(stock_data_dict.keys()))
+
                             matched_results.append({
                                 'stock_code': code,
                                 'stock_name': name,
@@ -511,7 +626,10 @@ class QuantSystem:
                                 'matched_code': best.get('case_code', ''),
                                 'breakdown': best.get('breakdown', {}),
                                 'tags': best.get('tags', []),
+                                'description': best.get('description', ''),
                                 'all_matches': best.get('all_matches', []),
+                                'industry': industry if industry else '未知',
+                                'industry_heat': round(industry_heat, 2) if industry_heat is not None else 'N/A',
                             })
                             
                 except Exception as e:
@@ -532,7 +650,12 @@ class QuantSystem:
             for i, r in enumerate(matched_results[:TOP_N_RESULTS], 1):
                 emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
                 print(f"{emoji} {r['stock_code']} {r['stock_name']}")
+                print(f"   行业：{r['industry']} | 行业热度：{r['industry_heat']}")
                 print(f"   相似度: {r['similarity_score']}% | 匹配: {r['matched_case']}")
+                # 显示匹配原因/趋势描述
+                if r.get('description'):
+                    print(f"   趋势：{r['description']}")
+
                 bd = r.get('breakdown', {})
                 print(f"   趋势:{bd.get('trend_structure', 0)}% "
                       f"KDJ:{bd.get('kdj_state', 0)}% "
@@ -546,7 +669,7 @@ class QuantSystem:
             'total_selected': total_selected,
         }
     
-    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25, M_days=None):
+    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25, M_days=None, pick_date=None, use_cache=False):
         """
         完整流程：更新 + 选股 + B1完美图形匹配 + 通知
 
@@ -572,21 +695,23 @@ class QuantSystem:
         match_result = self.select_with_b1_match(
             category=category,
             max_stocks=max_stocks,
+            use_cache=use_cache,
             min_similarity=min_similarity,
-            lookback_days=lookback_days
+            lookback_days=lookback_days,
+            pick_date=pick_date
         )
         
-        # 3. 发送通知
-        if match_result.get('matched'):
-            print("\n📤 发送钉钉通知...")
-            self.notifier.send_b1_match_results(
-                match_result['matched'],
-                match_result.get('total_selected', 0)
-            )
-            print("✓ 通知发送完成")
-        else:
-            print("\n⚠️ 没有匹配结果，跳过通知")
-        
+        # 3. 发送通知（暂时禁用）
+        # if match_result.get('matched'):
+        #     print("\n📤 发送通知...")
+        #     self.notifier.send_b1_match_results(
+        #         match_result['matched'],
+        #         match_result.get('total_selected', 0)
+        #     )
+        #     print("✓ 通知发送完成")
+        # else:
+        #     print("\n⚠️ 没有匹配结果，跳过通知")
+
         return match_result
     
     def run_schedule(self):
@@ -715,6 +840,13 @@ B1完美图形匹配:
         default=False,
         help='跳过K线图生成和发送，仅输出文本结果'
     )
+
+    parser.add_argument(
+        '--use-cache',
+        action='store_true',
+        default=False,
+        help='使用缓存数据（行业数据/成交额数据），不从 API 重新拉取。默认行为是从 API 拉取最新数据'
+    )
     
     # 从配置读取B1PatternMatch默认值
     try:
@@ -745,6 +877,13 @@ B1完美图形匹配:
         type=int,
         default=None,
         help=f'B1完美图形匹配的回看天数 (默认: {default_lookback_days})'
+    )
+    
+    parser.add_argument(
+        '--pick-date',
+        type=str,
+        default=None,
+        help='指定选股日期，格式：YYYY-MM-DD（默认使用最新数据日期）'
     )
     # 从配置读取 BowlReboundStrategy 的 M 默认值
     try:
@@ -795,9 +934,11 @@ B1完美图形匹配:
             quant.run_with_b1_match(
                 category=args.category,
                 max_stocks=args.max_stocks,
+                use_cache=args.use_cache,
                 min_similarity=min_sim,
                 lookback_days=lookback,
-                M_days=M_days
+                M_days=M_days,
+                pick_date=args.pick_date
             )
         else:
             # 原有选股流程（不带B1匹配）
