@@ -13,9 +13,22 @@ import sys
 import os
 import argparse
 import platform
+import logging
 from pathlib import Path
 from datetime import datetime, time as dt_time
 import time
+import yaml
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[
+        logging.FileHandler('logs/quant.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # 添加项目根目录到路径
 project_root = Path(__file__).parent
@@ -24,9 +37,20 @@ sys.path.insert(0, str(project_root))
 # 版本信息
 __version__ = "1.0.0"
 
+# 全局模块导入（只在主进程导入一次，避免子进程重复加载）
 from utils.akshare_fetcher import AKShareFetcher
 from utils.csv_manager import CSVManager
 from utils.feishu_notifier import FeishuNotifier
+from strategy.strategy_registry import get_registry
+
+# 可选导入K线图模块，没有的话不影响核心选股逻辑
+try:
+    from utils.kline_chart import generate_kline_chart
+    KLINE_CHART_AVAILABLE = True
+except ImportError:
+    KLINE_CHART_AVAILABLE = False
+    generate_kline_chart = None
+    logger.warning("K线图模块未安装，仅运行核心选股逻辑，图片功能不可用")
 
 # 并行处理函数（全局函数，支持多进程序列化）
 def _process_stock_parallel(args):
@@ -40,18 +64,8 @@ def _process_stock_parallel(args):
         signal_list = strategy.select_stocks(df_with_indicators, name)
         return code, name, signal_list, df_with_indicators if signal_list else None
     except Exception as e:
-        print(f"  处理 {code} 异常: {e}")
+        logger.error(f"处理 {code} 异常: {str(e)}", exc_info=False)
         return code, name, [], None
-from strategy.strategy_registry import get_registry
-# 可选导入K线图模块，没有的话不影响核心选股逻辑
-try:
-    from utils.kline_chart import generate_kline_chart
-    KLINE_CHART_AVAILABLE = True
-except ImportError:
-    KLINE_CHART_AVAILABLE = False
-    generate_kline_chart = None
-    print("⚠️ K线图模块未安装，仅运行核心选股逻辑，图片功能不可用")
-import yaml
 
 
 class QuantSystem:
@@ -68,10 +82,18 @@ class QuantSystem:
     def _load_config(self, config_file):
         """加载配置文件"""
         config_path = Path(config_file)
-        if config_path.exists():
+        if not config_path.exists():
+            logger.warning(f"配置文件 {config_file} 不存在，使用默认配置")
+            return {}
+        try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 return yaml.safe_load(f) or {}
-        return {}
+        except yaml.YAMLError as e:
+            logger.error(f"配置文件 {config_file} 格式错误: {str(e)}，使用默认配置")
+            return {}
+        except Exception as e:
+            logger.error(f"加载配置文件 {config_file} 失败: {str(e)}，使用默认配置")
+            return {}
     
     def _init_notifier(self):
         """初始化通知器（使用OpenClaw内置推送，不需要配置webhook）"""
