@@ -999,6 +999,32 @@ B1完美图形匹配:
         parser.print_help()
         sys.exit(1)
     
+    # 参数有效性校验
+    if args.min_similarity is not None and (args.min_similarity < 0 or args.min_similarity > 100):
+        logger.error(f"--min-similarity 参数无效: {args.min_similarity}，必须在0-100范围内")
+        sys.exit(1)
+    
+    if args.lookback_days is not None and args.lookback_days <= 0:
+        logger.error(f"--lookback-days 参数无效: {args.lookback_days}，必须大于0")
+        sys.exit(1)
+    
+    if args.max_stocks is not None and args.max_stocks <= 0:
+        logger.error(f"--max-stocks 参数无效: {args.max_stocks}，必须大于0")
+        sys.exit(1)
+    
+    if args.M_days is not None and args.M_days <= 0:
+        logger.error(f"--M-days 参数无效: {args.M_days}，必须大于0")
+        sys.exit(1)
+    
+    if args.pick_date is not None:
+        # 校验日期格式是否正确
+        from datetime import datetime
+        try:
+            datetime.strptime(args.pick_date, '%Y-%m-%d')
+        except ValueError:
+            logger.error(f"--pick-date 参数格式无效: {args.pick_date}，必须是YYYY-MM-DD格式")
+            sys.exit(1)
+    
     # 切换工作目录
     os.chdir(project_root)
     
