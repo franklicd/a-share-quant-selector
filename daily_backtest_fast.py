@@ -31,7 +31,7 @@ sys.path.insert(0, str(project_root))
 
 from utils.csv_manager import CSVManager
 from utils.technical import MA, EMA, LLV, HHV, REF, EXIST, KDJ, calculate_zhixing_trend
-from utils.industry_fetcher import IndustryFetcher, IndustryHeatCalculator
+from utils.industry_fetcher import IndustryFetcher, IndustryHeatCalculator, TurnoverCache
 from strategy.pattern_feature_extractor import PatternFeatureExtractor
 from strategy.pattern_matcher import PatternMatcher
 from strategy.pattern_config import SIMILARITY_WEIGHTS, B1_PERFECT_CASES
@@ -148,12 +148,15 @@ def _process_single_day(args):
 
             # 止盈止损触发日期
             trigger_10pct_date = None
+            trigger_5pct_date = None  # 新增：5% 止盈触发日期
             trigger_neg2pct_date = None
             trigger_neg4pct_date = None
             trigger_10pct_day = None  # 达到 +10% 的天数
+            trigger_5pct_day = None   # 新增：达到 +5% 的天数
             ever_below_zero = False  # 是否曾跌破成本价（0%）
 
             price_10pct = buy_price * 1.10
+            price_5pct = buy_price * 1.05   # 新增：5% 止盈价格
             price_neg2pct = buy_price * 0.98
             price_neg4pct = buy_price * 0.96
 
@@ -164,6 +167,9 @@ def _process_single_day(args):
                 if trigger_10pct_date is None and row['high'] >= price_10pct:
                     trigger_10pct_date = row_date
                     trigger_10pct_day = days_from_buy
+                if trigger_5pct_date is None and row['high'] >= price_5pct:  # 新增：5% 止盈检测
+                    trigger_5pct_date = row_date
+                    trigger_5pct_day = days_from_buy
                 if trigger_neg2pct_date is None and row['low'] <= price_neg2pct:
                     trigger_neg2pct_date = row_date
                 if trigger_neg4pct_date is None and row['low'] <= price_neg4pct:
@@ -172,13 +178,16 @@ def _process_single_day(args):
                 if row['low'] < buy_price:
                     ever_below_zero = True
 
-                if trigger_10pct_date and trigger_neg2pct_date and trigger_neg4pct_date:
+                # 所有触发都检测到后退出
+                if all([trigger_10pct_date, trigger_5pct_date, trigger_neg2pct_date, trigger_neg4pct_date]):
                     break
 
             first_reach_order = None
             triggers = []
             if trigger_10pct_date:
                 triggers.append(('10pct', trigger_10pct_date))
+            if trigger_5pct_date:
+                triggers.append(('5pct', trigger_5pct_date))  # 新增：5% 止盈
             if trigger_neg2pct_date:
                 triggers.append(('neg2pct', trigger_neg2pct_date))
             if trigger_neg4pct_date:
@@ -191,8 +200,11 @@ def _process_single_day(args):
             max_gain_pct = return_pct
             max_gain_day = hold_days
             trigger_10pct_date = None
+            trigger_5pct_date = None  # 新增
             trigger_neg2pct_date = None
             trigger_neg4pct_date = None
+            trigger_10pct_day = None
+            trigger_5pct_day = None  # 新增
             first_reach_order = None
 
         # 计算行业热度（使用预计算缓存）
@@ -218,6 +230,13 @@ def _process_single_day(args):
             date_str = date_to_str(trigger_10pct_date)
             if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
                 industry_heat_10pct = industry_heats_cache[industry][date_str]
+
+        # 达到 +5% 日的行业热度（新增）
+        industry_heat_5pct = None
+        if trigger_5pct_date and industry:
+            date_str = date_to_str(trigger_5pct_date)
+            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
+                industry_heat_5pct = industry_heats_cache[industry][date_str]
 
         # 达到 -2% 日的行业热度
         industry_heat_neg2pct = None
@@ -258,15 +277,18 @@ def _process_single_day(args):
             'sell_date': str(actual_sell_date) if actual_sell_date else '',
             'hold_days': hold_days,
             'trigger_10pct_date': str(trigger_10pct_date) if trigger_10pct_date else '',
+            'trigger_5pct_date': str(trigger_5pct_date) if trigger_5pct_date else '',  # 新增
             'trigger_neg2pct_date': str(trigger_neg2pct_date) if trigger_neg2pct_date else '',
             'trigger_neg4pct_date': str(trigger_neg4pct_date) if trigger_neg4pct_date else '',
             'trigger_10pct_day': trigger_10pct_day if trigger_10pct_day is not None else '',
+            'trigger_5pct_day': trigger_5pct_day if trigger_5pct_day is not None else '',  # 新增
             'first_reach_order': str(first_reach_order) if first_reach_order else '',
             'ever_below_zero': ever_below_zero,  # 是否曾跌破成本价
             # 行业热度字段
             'industry': industry if industry else '未知',
             'industry_heat_buy': round(industry_heat_buy, 2) if industry_heat_buy is not None else '',
             'industry_heat_10pct': round(industry_heat_10pct, 2) if industry_heat_10pct is not None else '',
+            'industry_heat_5pct': round(industry_heat_5pct, 2) if industry_heat_5pct is not None else '',  # 新增
             'industry_heat_neg2pct': round(industry_heat_neg2pct, 2) if industry_heat_neg2pct is not None else '',
             'industry_heat_neg4pct': round(industry_heat_neg4pct, 2) if industry_heat_neg4pct is not None else '',
             'industry_heat_sell': round(industry_heat_sell, 2) if industry_heat_sell is not None else ''
@@ -686,26 +708,24 @@ class FastDailyBacktester:
         trading_dates_str = [d.strftime('%Y-%m-%d') for d in trading_dates]
         all_stocks = list(stock_data_dict.keys())
 
-        # 构建 {date: {code: turnover}} 的成交额缓存
-        print("  预计算股票成交额...")
-        turnover_cache = {}  # {date_str: {code: turnover}}
-        for date_str in trading_dates_str:
-            turnover_cache[date_str] = {}
-            for code in all_stocks:
-                name, df = stock_data_dict[code]
-                row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
-                if not row.empty:
-                    # 优先使用 amount，否则用 volume * price * 100 估算
-                    val = row['amount'].iloc[0] if 'amount' in row.columns else None
-                    if pd.notna(val) and val > 0:
-                        turnover_cache[date_str][code] = val
-                    else:
-                        vol = row['volume'].iloc[0] if 'volume' in row.columns else 0
-                        price = row['close'].iloc[0] if 'close' in row.columns else 0
-                        if vol > 0 and price > 0:
-                            turnover_cache[date_str][code] = vol * price * 100
+        # 使用持久化成交额缓存（历史数据不变，一次计算永久使用）
+        print("  加载成交额缓存...")
+        turnover_cache_manager = TurnoverCache()
+        loaded_from_cache = turnover_cache_manager.load()
 
-        print(f"  ✓ 成交额预计算完成：{len(turnover_cache)} 天")
+        # 增量更新：只计算缓存中没有的日期
+        missing_dates = [d for d in trading_dates_str if not turnover_cache_manager.has_date(d)]
+        if missing_dates:
+            print(f"  需要补充 {len(missing_dates)} 个交易日的成交额数据...")
+            for date_str in missing_dates:
+                turnover_cache_manager.update_date(date_str, stock_data_dict, all_stocks)
+            # 保存更新后的缓存
+            turnover_cache_manager.save()
+        else:
+            print(f"  ✓ 所有 {len(trading_dates_str)} 个交易日的成交额数据已在缓存中")
+
+        # 获取完整的成交额缓存供行业热度计算使用
+        turnover_cache = turnover_cache_manager.get_cache()
 
         # 为每个行业预计算热度（使用成交额缓存加速）
         industry_cache = IndustryHeatCalculator(industry_fetcher)
@@ -741,6 +761,7 @@ class FastDailyBacktester:
 
             # 收集结果
             completed = 0
+            # 每个交易日都打印进度（改为更频繁的进度提示）
             for future in as_completed(future_to_date):
                 sel_date = future_to_date[future]
                 completed += 1
@@ -753,9 +774,8 @@ class FastDailyBacktester:
                         if day_summary:
                             daily_summary.append(day_summary)
 
-                        # 打印进度
-                        if completed % 10 == 0 or completed == len(trading_dates):
-                            print(f"[{completed}/{len(trading_dates)}] 已完成 {sel_date}")
+                    # 打印进度（每个任务完成后都打印）
+                    print(f"[{completed}/{len(trading_dates)}] 已完成 {sel_date}")
 
                 except Exception as e:
                     print(f"  ⚠️ 处理 {sel_date} 时出错：{e}")
@@ -855,15 +875,18 @@ class FastDailyBacktester:
                 '卖出日期': r['sell_date'],
                 '持有天数': r['hold_days'],
                 '触发 +10% 日期': r.get('trigger_10pct_date', '') or '-',
+                '触发 +5% 日期': r.get('trigger_5pct_date', '') or '-',  # 新增
                 '触发 -2% 日期': r.get('trigger_neg2pct_date', '') or '-',
                 '触发 -4% 日期': r.get('trigger_neg4pct_date', '') or '-',
                 '达到 +10% 天数': f"第{r['trigger_10pct_day']}天" if r.get('trigger_10pct_day') not in [None, ''] else '-',
+                '达到 +5% 天数': f"第{r['trigger_5pct_day']}天" if r.get('trigger_5pct_day') not in [None, ''] else '-',  # 新增
                 '触发顺序': r.get('first_reach_order', '') or '-',
                 '是否曾跌破成本价': '是' if r.get('ever_below_zero') else '否',
                 # 行业热度字段
                 '行业': r.get('industry', '未知'),
                 '行业热度_买入日': r.get('industry_heat_buy', ''),
                 '行业热度_10pct 日': r.get('industry_heat_10pct', ''),
+                '行业热度_5pct 日': r.get('industry_heat_5pct', ''),  # 新增
                 '行业热度_neg2pct 日': r.get('industry_heat_neg2pct', ''),
                 '行业热度_neg4pct 日': r.get('industry_heat_neg4pct', ''),
                 '行业热度_卖出日': r.get('industry_heat_sell', '')

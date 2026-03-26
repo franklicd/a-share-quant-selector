@@ -98,7 +98,16 @@ class QuantSystem:
                 # 检查是否有指定日期的数据
                 latest_date = df['date'].max()
                 if latest_date.strftime('%Y-%m-%d') >= date_str:
+                    # 先尝试精确匹配指定日期
                     row = df[df['date'].dt.strftime('%Y-%m-%d') == date_str]
+
+                    # 如果不是交易日，使用最后一个实际交易日的数据
+                    if row.empty:
+                        # 找到小于等于指定日期的最大日期（最后一个交易日）
+                        df_before = df[df['date'] <= date_str]
+                        if not df_before.empty:
+                            row = df_before.iloc[:1]  # 取最近的一个交易日
+
                     if not row.empty:
                         val = row['amount'].iloc[0] if 'amount' in row.columns else None
                         if pd.notna(val) and val > 0:
@@ -150,19 +159,38 @@ class QuantSystem:
         self.fetcher.init_full_data(max_stocks=max_stocks)
         print("\n✓ 数据初始化完成")
 
-    def _smart_update(self, max_stocks=None, check_latest=True):
-        """智能更新：3点前不更新，检查每只股票是否有当天数据"""
+    def _smart_update(self, max_stocks=None, check_latest=True, force_update=False):
+        """智能更新：3 点前不更新，检查每只股票是否有当天数据"""
         from datetime import datetime
         import pandas as pd
 
         today = datetime.now().date()
+        today_str = today.strftime('%Y-%m-%d')
         current_time = datetime.now().time()
         market_close_time = datetime.strptime("15:00", "%H:%M").time()
 
-        # 3点前：不更新，使用旧数据
+        # 3 点前：不更新，使用旧数据
         if current_time < market_close_time:
             print("\n⏰ 当前时间尚未收盘 (15:00)")
             print("  使用本地已有数据，跳过网络更新")
+            return
+
+        # 检查缓存：如果今天已更新过，直接跳过
+        update_cache_file = Path(self.data_dir) / '.update_cache.json'
+        update_cache = {}
+        if update_cache_file.exists():
+            try:
+                import json
+                with open(update_cache_file, 'r', encoding='utf-8') as f:
+                    update_cache = json.load(f)
+            except:
+                update_cache = {}
+        
+        cache_date = update_cache.get('last_update_date')
+        if cache_date == today_str and not max_stocks and not force_update:
+            print(f"✓ 数据已于 {cache_date} 收盘后更新过，无需重复更新")
+            if force_update:
+                print("  但 --force 参数已设置，将强制更新...")
             return
 
         # 检查每只股票是否有当天数据
@@ -175,7 +203,7 @@ class QuantSystem:
             total = len(stock_codes)
             has_today = 0
             no_today = 0
-            check_limit = min(100, total)  # 抽样检查100只
+            check_limit = min(100, total)  # 抽样检查 100 只
 
             for code in stock_codes[:check_limit]:
                 df = self.csv_manager.read_stock(code)
@@ -186,11 +214,13 @@ class QuantSystem:
                     else:
                         no_today += 1
 
-            # 如果100%股票都有今天数据，跳过更新
-            if check_limit > 0 and has_today == check_limit:
+            # 如果 100% 股票都有今天数据，跳过更新（force_update 时除外）
+            if check_limit > 0 and has_today == check_limit and not force_update:
                 print(f"  ✓ 已检查 {check_limit} 只股票，全部已有今天数据")
                 print("  数据已是最新，跳过网络更新")
                 return
+            elif force_update:
+                print(f"  --force 参数已设置，强制更新数据")
             else:
                 print(f"  已检查 {check_limit} 只，{has_today} 只有今天数据，{no_today} 只需要更新")
 
@@ -207,7 +237,7 @@ class QuantSystem:
         self.fetcher.daily_update(max_stocks=max_stocks)
         print("\n✓ 数据更新完成")
 
-    def select_stocks(self, category='all', max_stocks=None, return_data=False, M_days=None):
+    def select_stocks(self, category='all', max_stocks=None, return_data=False, M_days=None, pick_date=None):
         """执行选股
         :param category: 股票分类筛选，'all'表示全部，其他值按分类筛选
         :param max_stocks: 限制处理的股票数量（用于快速测试）
@@ -281,6 +311,18 @@ class QuantSystem:
         # 第一步：一次性读取所有需要处理的股票数据（缓存复用）
         print("\n[1/2] 加载股票数据...")
         import gc
+        from datetime import datetime
+        import pandas as pd
+
+        # 如果指定了选股日期，解析为 datetime 对象
+        target_date = None
+        if pick_date:
+            if isinstance(pick_date, str):
+                target_date = datetime.strptime(pick_date, '%Y-%m-%d')
+            else:
+                target_date = pick_date
+            print(f"  选股日期：{target_date.strftime('%Y-%m-%d')} (非交易日则使用前一交易日)")
+
         stock_data_cache = {}
         valid_codes = []
         invalid_count = 0
@@ -288,7 +330,19 @@ class QuantSystem:
         for i, code in enumerate(process_codes, 1):
             df = self.csv_manager.read_stock(code)
             name = stock_names.get(code, '未知')
-            
+
+            # 如果指定了日期，截断到该日期（或前一交易日）
+            if target_date and df is not None and not df.empty:
+                df = df.copy()
+                df['date'] = pd.to_datetime(df['date'])
+                # 找到小于等于目标日期的最大日期（最后一个交易日）
+                df_before = df[df['date'] <= target_date]
+                if not df_before.empty:
+                    df = df_before.reset_index(drop=True)
+                else:
+                    # 如果所有数据都晚于目标日期，跳过该股票
+                    continue
+
             # 过滤无效股票（使用统一过滤规则，与选股逻辑完全一致）
             from utils.stock_filter import is_valid_stock
             if not is_valid_stock(name, df):
@@ -399,7 +453,7 @@ class QuantSystem:
         
         return results, stock_names
     
-    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False, M_days=None):
+    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False, M_days=None, pick_date=None, force_update=False):
         """完整流程：更新 + 选股 + 通知（带K线图）
         :param max_stocks: 限制处理的股票数量（用于快速测试）
         :param no_notify: 是否跳过通知发送
@@ -416,10 +470,10 @@ class QuantSystem:
         print("=" * 60)
 
         # 1. 更新数据（内置逻辑：3点前不更新，检查每只股票是否有当天数据）
-        self._smart_update(max_stocks=max_stocks)
+        self._smart_update(max_stocks=max_stocks, force_update=force_update)
 
         # 2. 选股（返回数据和结果）
-        results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True, M_days=M_days)
+        results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True, M_days=M_days, pick_date=pick_date)
 
         # 3. 发送通知（带K线图）
         if results and not no_notify:
@@ -443,7 +497,7 @@ class QuantSystem:
 
         return results
     
-    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None, pick_date=None, use_cache=False):
+    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None, pick_date=None, use_cache=False, force_update=False):
         """
         执行选股 + B1完美图形匹配排序
         
@@ -474,10 +528,11 @@ class QuantSystem:
         # 1. 先执行原有选股逻辑
         print("\n[1/3] 执行策略选股...")
         results, stock_names, stock_data_dict = self.select_stocks(
-            category=category, 
-            max_stocks=max_stocks, 
+            category=category,
+            max_stocks=max_stocks,
             return_data=True,
-            M_days=M_days
+            M_days=M_days,
+            pick_date=pick_date
         )
         
         # 统计选股总数
@@ -669,7 +724,7 @@ class QuantSystem:
             'total_selected': total_selected,
         }
     
-    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25, M_days=None, pick_date=None, use_cache=False):
+    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=25, M_days=None, pick_date=None, use_cache=False, force_update=False):
         """
         完整流程：更新 + 选股 + B1完美图形匹配 + 通知
 
@@ -689,7 +744,7 @@ class QuantSystem:
         print("=" * 60)
 
         # 1. 更新数据
-        self._smart_update(max_stocks=max_stocks)
+        self._smart_update(max_stocks=max_stocks, force_update=force_update)
 
         # 2. 选股 + B1完美图形匹配
         match_result = self.select_with_b1_match(
@@ -848,6 +903,15 @@ B1完美图形匹配:
         help='使用缓存数据（行业数据/成交额数据），不从 API 重新拉取。默认行为是从 API 拉取最新数据'
     )
     
+    parser.add_argument(
+        '--force',
+        '--no-cache',
+        action='store_true',
+        default=False,
+        dest='force_update',
+        help='强制从网络拉取最新数据，忽略 .update_cache.json 缓存（用于数据更新）'
+    )
+    
     # 从配置读取B1PatternMatch默认值
     try:
         from strategy.pattern_config import MIN_SIMILARITY_SCORE, DEFAULT_LOOKBACK_DAYS
@@ -934,7 +998,7 @@ B1完美图形匹配:
             quant.run_with_b1_match(
                 category=args.category,
                 max_stocks=args.max_stocks,
-                use_cache=args.use_cache,
+                use_cache=args.use_cache, force_update=args.force_update,
                 min_similarity=min_sim,
                 lookback_days=lookback,
                 M_days=M_days,
@@ -948,8 +1012,7 @@ B1完美图形匹配:
                 max_stocks=args.max_stocks,
                 no_notify=args.no_notify,
                 no_chart=args.no_chart,
-                M_days=M_days
-            )
+                M_days=M_days, force_update=args.force_update            )
     
     elif args.command == 'web':
         # 启动Web服务器

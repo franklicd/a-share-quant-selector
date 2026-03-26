@@ -1,0 +1,1052 @@
+{
+  "config": {
+    "start_date": "2025-10-01",
+    "end_date": "2025-10-15",
+    "top_n": 10,
+    "hold_days": 30
+  },
+  "summary": {
+    "total_trades": 50,
+    "win_rate": 28.000000000000004,
+    "avg_return": -2.5022075271246544
+  },
+  "daily_summary": [
+    {
+      "date": "2025-10-09",
+      "count": 10,
+      "win_count": 3,
+      "win_rate": 30.0,
+      "avg_return": -2.8881630741418514
+    },
+    {
+      "date": "2025-10-10",
+      "count": 10,
+      "win_count": 1,
+      "win_rate": 10.0,
+      "avg_return": -5.0541746483237056
+    },
+    {
+      "date": "2025-10-13",
+      "count": 10,
+      "win_count": 2,
+      "win_rate": 20.0,
+      "avg_return": -7.192872062745243
+    },
+    {
+      "date": "2025-10-14",
+      "count": 10,
+      "win_count": 3,
+      "win_rate": 30.0,
+      "avg_return": -1.851731270108489
+    },
+    {
+      "date": "2025-10-15",
+      "count": 10,
+      "win_count": 5,
+      "win_rate": 50.0,
+      "avg_return": 4.475903419696019
+    }
+  ],
+  "all_results": [
+    {
+      "selection_date": "2025-10-09",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 1,
+      "similarity_score": 97.77,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 17.71,
+      "sell_price": 16.13,
+      "return_pct": -8.921513269339366,
+      "max_gain_pct": 2.879728966685477,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "002681",
+      "name": "奋达科技",
+      "rank": 2,
+      "similarity_score": 95.82,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 7.25,
+      "sell_price": 6.69,
+      "return_pct": -7.724137931034478,
+      "max_gain_pct": 1.1034482758620698,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "605136",
+      "name": "丽人丽妆",
+      "rank": 3,
+      "similarity_score": 95.76,
+      "best_match_case": "case_001",
+      "best_match_date": "2025-05-12",
+      "category": "科创板",
+      "reasons": [
+        "匹配case_001: 华纳药厂 - 杯型整理+缩量+J值低位"
+      ],
+      "buy_price": 9.95,
+      "sell_price": 9.9,
+      "return_pct": -0.5025125628140596,
+      "max_gain_pct": 3.517587939698507,
+      "max_gain_day": 7,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "000810",
+      "name": "创维数字",
+      "rank": 4,
+      "similarity_score": 95.37,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 13.58,
+      "sell_price": 12.75,
+      "return_pct": -6.111929307805597,
+      "max_gain_pct": 4.491899852724591,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "600228",
+      "name": "*ST返利",
+      "rank": 5,
+      "similarity_score": 94.89,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 5.56,
+      "sell_price": 6.97,
+      "return_pct": 25.35971223021583,
+      "max_gain_pct": 25.35971223021583,
+      "max_gain_day": 32,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "001306",
+      "name": "夏厦精密",
+      "rank": 6,
+      "similarity_score": 94.18,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 102.72,
+      "sell_price": 91.37,
+      "return_pct": -11.04945482866043,
+      "max_gain_pct": 4.906542056074772,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "002555",
+      "name": "三七互娱",
+      "rank": 7,
+      "similarity_score": 94.18,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 21.381,
+      "sell_price": 21.7,
+      "return_pct": 1.4919788597352746,
+      "max_gain_pct": 12.908657219026228,
+      "max_gain_day": 26,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "605319",
+      "name": "无锡振华",
+      "rank": 8,
+      "similarity_score": 94.11,
+      "best_match_case": "case_009",
+      "best_match_date": "2025-08-01",
+      "category": "创业板",
+      "reasons": [
+        "匹配case_009: 新瀚新材 - 缩量后放量+价格接近短期趋势线+J值中位"
+      ],
+      "buy_price": 24.81,
+      "sell_price": 21.88,
+      "return_pct": -11.809754131398629,
+      "max_gain_pct": 3.1035872632003207,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "300457",
+      "name": "赢合科技",
+      "rank": 9,
+      "similarity_score": 93.81,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 34.48,
+      "sell_price": 28.7,
+      "return_pct": -16.763341067285378,
+      "max_gain_pct": 4.6983758700696185,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "603196",
+      "name": "日播时尚",
+      "rank": 10,
+      "similarity_score": 93.8,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 22.1,
+      "sell_price": 23.68,
+      "return_pct": 7.149321266968317,
+      "max_gain_pct": 10.814479638009034,
+      "max_gain_day": 18,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 1,
+      "similarity_score": 97.04,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 17.66,
+      "sell_price": 16.13,
+      "return_pct": -8.663646659116655,
+      "max_gain_pct": 3.1710079275198115,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002886",
+      "name": "沃特股份",
+      "rank": 2,
+      "similarity_score": 96.26,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 22.79,
+      "sell_price": 21.17,
+      "return_pct": -7.1083808688020955,
+      "max_gain_pct": 1.7551557700746037,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603298",
+      "name": "杭叉集团",
+      "rank": 3,
+      "similarity_score": 95.13,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 27.63,
+      "sell_price": 26.31,
+      "return_pct": -4.77741585233442,
+      "max_gain_pct": 10.025334781035106,
+      "max_gain_day": 20,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "605136",
+      "name": "丽人丽妆",
+      "rank": 4,
+      "similarity_score": 94.82,
+      "best_match_case": "case_001",
+      "best_match_date": "2025-05-12",
+      "category": "科创板",
+      "reasons": [
+        "匹配case_001: 华纳药厂 - 杯型整理+缩量+J值低位"
+      ],
+      "buy_price": 9.98,
+      "sell_price": 9.9,
+      "return_pct": -0.8016032064128262,
+      "max_gain_pct": 3.206412825651305,
+      "max_gain_day": 6,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "300521",
+      "name": "爱司凯",
+      "rank": 5,
+      "similarity_score": 94.4,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "科创板",
+      "reasons": [
+        "匹配case_003: 微芯生物 - 平台整理+缩量后放量+J值低位"
+      ],
+      "buy_price": 29.12,
+      "sell_price": 26.6,
+      "return_pct": -8.653846153846152,
+      "max_gain_pct": 4.7390109890109855,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603266",
+      "name": "天龙股份",
+      "rank": 6,
+      "similarity_score": 94.1,
+      "best_match_case": "case_008",
+      "best_match_date": "2025-07-10",
+      "category": "主板",
+      "reasons": [
+        "匹配case_008: 光电股份 - 缩量后放量+J值低位+趋势上行"
+      ],
+      "buy_price": 24.81,
+      "sell_price": 21.4,
+      "return_pct": -13.744457879887143,
+      "max_gain_pct": 1.1688835147118206,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002164",
+      "name": "宁波东力",
+      "rank": 7,
+      "similarity_score": 94.05,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 14.32,
+      "sell_price": 12.76,
+      "return_pct": -10.893854748603356,
+      "max_gain_pct": 5.446927374301672,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603912",
+      "name": "佳力图",
+      "rank": 8,
+      "similarity_score": 93.84,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 9.2,
+      "sell_price": 8.68,
+      "return_pct": -5.652173913043474,
+      "max_gain_pct": 1.7391304347826104,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "600228",
+      "name": "*ST返利",
+      "rank": 9,
+      "similarity_score": 93.66,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 5.47,
+      "sell_price": 6.97,
+      "return_pct": 27.422303473491777,
+      "max_gain_pct": 27.422303473491777,
+      "max_gain_day": 31,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002664",
+      "name": "信质集团",
+      "rank": 10,
+      "similarity_score": 93.65,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 29.94,
+      "sell_price": 24.65,
+      "return_pct": -17.66867067468271,
+      "max_gain_pct": 11.055444221776883,
+      "max_gain_day": 10,
+      "sell_date": "2025-11-10",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603683",
+      "name": "晶华新材",
+      "rank": 1,
+      "similarity_score": 96.07,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 32.94,
+      "sell_price": 30.82,
+      "return_pct": -6.4359441408621665,
+      "max_gain_pct": 1.6697024893746335,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002920",
+      "name": "德赛西威",
+      "rank": 2,
+      "similarity_score": 94.54,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 135.76,
+      "sell_price": 116.21,
+      "return_pct": -14.400412492634059,
+      "max_gain_pct": 5.05303476723631,
+      "max_gain_day": 3,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "688237",
+      "name": "超卓航科",
+      "rank": 3,
+      "similarity_score": 93.94,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 54.09,
+      "sell_price": 54.8,
+      "return_pct": 1.312627102976509,
+      "max_gain_pct": 15.511185061933801,
+      "max_gain_day": 14,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "301029",
+      "name": "怡合达",
+      "rank": 4,
+      "similarity_score": 93.86,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 29.89,
+      "sell_price": 26.99,
+      "return_pct": -9.702241552358656,
+      "max_gain_pct": 1.739712278353963,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603266",
+      "name": "天龙股份",
+      "rank": 5,
+      "similarity_score": 93.7,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "科创板",
+      "reasons": [
+        "匹配case_003: 微芯生物 - 平台整理+缩量后放量+J值低位"
+      ],
+      "buy_price": 23.84,
+      "sell_price": 20.86,
+      "return_pct": -12.500000000000004,
+      "max_gain_pct": 2.265100671140936,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002624",
+      "name": "完美世界",
+      "rank": 6,
+      "similarity_score": 93.6,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 17.66,
+      "sell_price": 15.44,
+      "return_pct": -12.57078142695357,
+      "max_gain_pct": 2.491506228765579,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603196",
+      "name": "日播时尚",
+      "rank": 7,
+      "similarity_score": 93.53,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 21.54,
+      "sell_price": 23.22,
+      "return_pct": 7.799442896935932,
+      "max_gain_pct": 13.695450324976784,
+      "max_gain_day": 14,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002558",
+      "name": "巨人网络",
+      "rank": 8,
+      "similarity_score": 93.41,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 41.24,
+      "sell_price": 36.3,
+      "return_pct": -11.978661493695453,
+      "max_gain_pct": 3.661493695441314,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002239",
+      "name": "奥特佳",
+      "rank": 9,
+      "similarity_score": 93.35,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 3.23,
+      "sell_price": 3.18,
+      "return_pct": -1.5479876160990658,
+      "max_gain_pct": 2.167182662538695,
+      "max_gain_day": 24,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "300984",
+      "name": "金沃股份",
+      "rank": 10,
+      "similarity_score": 93.14,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 68.46,
+      "sell_price": 60.31,
+      "return_pct": -11.904761904761893,
+      "max_gain_pct": 5.828220858895719,
+      "max_gain_day": 2,
+      "sell_date": "2025-11-12",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "002011",
+      "name": "盾安环境",
+      "rank": 1,
+      "similarity_score": 96.58,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "科创板",
+      "reasons": [
+        "匹配case_003: 微芯生物 - 平台整理+缩量后放量+J值低位"
+      ],
+      "buy_price": 13.51,
+      "sell_price": 13.93,
+      "return_pct": 3.10880829015544,
+      "max_gain_pct": 7.253886010362698,
+      "max_gain_day": 13,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "300715",
+      "name": "凯伦股份",
+      "rank": 2,
+      "similarity_score": 95.38,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 11.73,
+      "sell_price": 11.64,
+      "return_pct": -0.7672634271099732,
+      "max_gain_pct": 13.640238704177317,
+      "max_gain_day": 21,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "300688",
+      "name": "创业黑马",
+      "rank": 3,
+      "similarity_score": 94.53,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 29.4,
+      "sell_price": 31.23,
+      "return_pct": 6.224489795918374,
+      "max_gain_pct": 11.734693877551031,
+      "max_gain_day": 21,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 4,
+      "similarity_score": 94.03,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 16.84,
+      "sell_price": 15.59,
+      "return_pct": -7.422802850356295,
+      "max_gain_pct": 7.00712589073634,
+      "max_gain_day": 17,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603216",
+      "name": "梦天家居",
+      "rank": 5,
+      "similarity_score": 93.99,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 17.49,
+      "sell_price": 17.27,
+      "return_pct": -1.2578616352201195,
+      "max_gain_pct": 6.232132647226987,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-19",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603486",
+      "name": "科沃斯",
+      "rank": 6,
+      "similarity_score": 93.78,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 96.12,
+      "sell_price": 82.33,
+      "return_pct": -14.346650020807331,
+      "max_gain_pct": 4.036620890553469,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "301479",
+      "name": "弘景光电",
+      "rank": 7,
+      "similarity_score": 93.57,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 90.13,
+      "sell_price": 88.27,
+      "return_pct": -2.0636857871962717,
+      "max_gain_pct": 5.802729390879844,
+      "max_gain_day": 14,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "688230",
+      "name": "芯导科技",
+      "rank": 8,
+      "similarity_score": 93.45,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 74.59,
+      "sell_price": 68.45,
+      "return_pct": -8.231666443222952,
+      "max_gain_pct": 9.357822764445622,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "688328",
+      "name": "深科达",
+      "rank": 9,
+      "similarity_score": 93.44,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 27.56,
+      "sell_price": 25.73,
+      "return_pct": -6.640058055152388,
+      "max_gain_pct": 7.329462989840348,
+      "max_gain_day": 13,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "301046",
+      "name": "能辉科技",
+      "rank": 10,
+      "similarity_score": 93.39,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 25.7,
+      "sell_price": 29.01,
+      "return_pct": 12.879377431906624,
+      "max_gain_pct": 23.540856031128406,
+      "max_gain_day": 29,
+      "sell_date": "2025-11-13",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "603216",
+      "name": "梦天家居",
+      "rank": 1,
+      "similarity_score": 96.54,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 17.55,
+      "sell_price": 17.27,
+      "return_pct": -1.595441595441602,
+      "max_gain_pct": 1.7094017094017133,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-19",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "600176",
+      "name": "中国巨石",
+      "rank": 2,
+      "similarity_score": 95.77,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 15.93,
+      "sell_price": 15.89,
+      "return_pct": -0.2510985561832966,
+      "max_gain_pct": 7.030759573132461,
+      "max_gain_day": 16,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "603918",
+      "name": "金桥信息",
+      "rank": 3,
+      "similarity_score": 95.47,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 16.8,
+      "sell_price": 16.61,
+      "return_pct": -1.1309523809523885,
+      "max_gain_pct": 12.797619047619039,
+      "max_gain_day": 19,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000069",
+      "name": "华侨城Ａ",
+      "rank": 4,
+      "similarity_score": 95.29,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 2.5,
+      "sell_price": 2.79,
+      "return_pct": 11.600000000000001,
+      "max_gain_pct": 17.200000000000006,
+      "max_gain_day": 27,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "002244",
+      "name": "滨江集团",
+      "rank": 5,
+      "similarity_score": 94.93,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "主板",
+      "reasons": [
+        "匹配case_004: 方正科技 - 靠近多空线+量能平稳+J值中位"
+      ],
+      "buy_price": 11.7,
+      "sell_price": 10.73,
+      "return_pct": -8.290598290598282,
+      "max_gain_pct": 2.905982905982905,
+      "max_gain_day": 0,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000892",
+      "name": "欢瑞世纪",
+      "rank": 6,
+      "similarity_score": 94.8,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 5.93,
+      "sell_price": 7.28,
+      "return_pct": 22.765598650927497,
+      "max_gain_pct": 48.22934232715008,
+      "max_gain_day": 21,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688237",
+      "name": "超卓航科",
+      "rank": 7,
+      "similarity_score": 94.25,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 52.47,
+      "sell_price": 52.8,
+      "return_pct": 0.6289308176100596,
+      "max_gain_pct": 19.077568134171905,
+      "max_gain_day": 12,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688127",
+      "name": "蓝特光学",
+      "rank": 8,
+      "similarity_score": 94.21,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "中小板",
+      "reasons": [
+        "匹配case_006: 国轩高科 - 靠近短期趋势线+量能平稳+J值低位"
+      ],
+      "buy_price": 29.71,
+      "sell_price": 30.68,
+      "return_pct": 3.264893975092557,
+      "max_gain_pct": 17.300572197913162,
+      "max_gain_day": 22,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688779",
+      "name": "五矿新能",
+      "rank": 9,
+      "similarity_score": 94.13,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 7.11,
+      "sell_price": 9.01,
+      "return_pct": 26.722925457102665,
+      "max_gain_pct": 31.926863572433195,
+      "max_gain_day": 29,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000810",
+      "name": "创维数字",
+      "rank": 10,
+      "similarity_score": 94.08,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "主板",
+      "reasons": [
+        "匹配case_002: 宁波韵升 - 回落短期趋势线+量能平稳+J值中位"
+      ],
+      "buy_price": 13.4,
+      "sell_price": 12.2,
+      "return_pct": -8.955223880597023,
+      "max_gain_pct": 3.95522388059701,
+      "max_gain_day": 1,
+      "sell_date": "2025-11-14",
+      "hold_days": 30
+    }
+  ]
+}

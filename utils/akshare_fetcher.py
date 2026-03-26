@@ -10,6 +10,7 @@ from pathlib import Path
 import json
 import requests
 import random
+import tushare as ts
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -155,6 +156,53 @@ class AKShareFetcher:
         except Exception as e:
             print(f"  腾讯接口获取市值失败: {e}")
         
+        return market_cap_map
+
+    def _fetch_market_cap_tushare(self, stock_codes):
+        """使用 tushare 接口批量获取市值数据"""
+        market_cap_map = {}
+
+        try:
+            ts_token = self._get_tushare_token()
+            if not ts_token:
+                print("  未配置 TUSHARE_TOKEN，跳过 tushare 接口")
+                return {}
+
+            ts.set_token(ts_token)
+            pro = ts.pro_api()
+
+            # 转换股票代码格式，用于后续过滤
+            code_set = set()
+            code_map = {}
+            for code in stock_codes:
+                if code.startswith('6') or code.startswith('8'):
+                    ts_code = f"{code}.SH"
+                else:
+                    ts_code = f"{code}.SZ"
+                code_set.add(ts_code)
+                code_map[ts_code] = code
+
+            # 获取最新交易日的全市场数据
+            from datetime import datetime
+            trade_date = datetime.now().strftime("%Y%m%d")
+            print(f"  请求 tushare daily_basic 接口，trade_date={trade_date}...")
+            df = pro.daily_basic(trade_date=trade_date, fields=['ts_code', 'trade_date', 'total_mv'])
+
+            if df is not None and not df.empty:
+                for _, row in df.iterrows():
+                    ts_code = row['ts_code']
+                    if ts_code in code_set:
+                        total_mv = row['total_mv']  # 总市值（万元）
+                        if total_mv and total_mv > 0:
+                            original_code = code_map.get(ts_code)
+                            if original_code:
+                                market_cap_map[original_code] = int(float(total_mv) * 10000)  # 转换为元
+
+                print(f"  获取到 {len(market_cap_map)} 只股票市值")
+
+        except Exception as e:
+            print(f"  tushare 获取市值失败：{e}")
+
         return market_cap_map
     
     def _fetch_stock_list_http(self):
@@ -579,38 +627,41 @@ class AKShareFetcher:
         """
         抓取单只股票历史数据
         前复权，按日期倒序排列
-        
+
         数据源优先级：
-        1. tushare（提供完整的成交额字段）
-        2. 腾讯 HTTP 接口（作为 fallback）
+        1. tushare（首选，数据完整有成交额）
+        2. 腾讯 HTTP 接口（fallback）
         """
-        # 方法 1: 优先使用 tushare（数据更完整，有成交额字段）
+        # 方法 1: 优先使用 tushare
         try:
-            # 从配置或环境变量获取 token
             ts_token = self._get_tushare_token()
             if ts_token:
                 ts.set_token(ts_token)
                 pro = ts.pro_api()
-                
+
                 end_date = datetime.now().strftime("%Y%m%d")
                 start_date = (datetime.now() - timedelta(days=365 * years)).strftime("%Y%m%d")
-                
+
                 # 确定市场标识
                 if stock_code.startswith('6'):
                     ts_code = f"{stock_code}.SH"
                 else:
                     ts_code = f"{stock_code}.SZ"
-                
+
                 df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
-                
+
                 if df is not None and not df.empty:
                     # tushare 字段映射
                     df = df.rename(columns={
-                        'trade_date': 'date', 'open': 'open', 'high': 'high', 
-                        'low': 'low', 'close': 'close', 'vol': 'volume', 
-                        'amount': 'amount', 'turnover_ratio': 'turnover'
+                        'trade_date': 'date', 'open': 'open', 'high': 'high',
+                        'low': 'low', 'close': 'close', 'vol': 'volume',
+                        'amount': 'amount'
                     })
-                    df = df[['date', 'open', 'high', 'low', 'close', 'volume', 'amount', 'turnover']]
+                    # 只选择存在的列
+                    available_cols = ['date', 'open', 'high', 'low', 'close', 'volume', 'amount']
+                    df = df[available_cols]
+                    # 添加 turnover 占位（用 amount 近似）
+                    df['turnover'] = df['amount']
                     df['date'] = pd.to_datetime(df['date'])
                     df = df.sort_values('date', ascending=False)
                     print(f"✓ (tushare 获取 {len(df)}条)")
@@ -619,7 +670,7 @@ class AKShareFetcher:
                 print("  未配置 tushare token，尝试 HTTP 接口...")
         except Exception as e:
             print(f"  tushare 异常：{e}，尝试 HTTP 接口...")
-        
+
         # 方法 2: 降级到 HTTP 接口（腾讯）
         try:
             df = self._fetch_stock_history_http(stock_code, years)
@@ -628,7 +679,7 @@ class AKShareFetcher:
                 return df
         except Exception as e:
             print(f"  HTTP 异常：{e}，使用模拟数据...")
-        
+
         # 降级：使用模拟数据
         return self._generate_mock_data(stock_code, years)
 
@@ -636,7 +687,61 @@ class AKShareFetcher:
         """
         抓取近期数据用于增量更新
         优化：直接指定天数，避免计算误差
+        数据源优先级：tushare（默认） > akshare（备选 1） > 腾讯（备选 2）
         """
+        # 1. 优先使用 tushare
+        df = self._fetch_stock_update_tushare(stock_code, days)
+        if df is not None and not df.empty:
+            return df
+        
+        # 2. 使用 akshare 备选
+        df = self._fetch_stock_update_akshare(stock_code, days)
+        if df is not None and not df.empty:
+            return df
+        
+        # 3. 使用腾讯接口备选
+        return self._fetch_stock_update_tencent(stock_code, days)
+    
+    def _fetch_stock_update_akshare(self, stock_code, days=10):
+        """使用 akshare 获取近期数据（带重试机制）"""
+        import akshare as ak
+        from datetime import datetime, timedelta
+        
+        # 计算日期范围（多取 2 天确保覆盖）
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days + 2)
+        
+        # 重试 3 次
+        for attempt in range(3):
+            try:
+                df = ak.stock_zh_a_hist(
+                    symbol=stock_code,
+                    period="daily",
+                    start_date=start_date.strftime("%Y%m%d"),
+                    end_date=end_date.strftime("%Y%m%d"),
+                    adjust="qfq"
+                )
+                
+                if df is not None and not df.empty:
+                    # 字段映射
+                    df = df.rename(columns={
+                        '日期': 'date', '开盘': 'open', '收盘': 'close',
+                        '最高': 'high', '最低': 'low', '成交量': 'volume',
+                        '成交额': 'amount'
+                    })
+                    df['date'] = pd.to_datetime(df['date'])
+                    df = df.sort_values('date', ascending=False)
+                    return df
+                return None
+            except Exception as e:
+                if attempt < 2:
+                    time.sleep(1)  # 重试前等待 1 秒
+                else:
+                    print(f"  akshare 获取更新失败（重试 3 次）: {e}")
+                    return None
+    
+    def _fetch_stock_update_tencent(self, stock_code, days=10):
+        """使用腾讯接口获取近期数据（备选）"""
         try:
             import requests
             
@@ -646,8 +751,7 @@ class AKShareFetcher:
             else:
                 market_code = 'sz' + stock_code
             
-            # 腾讯接口：直接指定获取天数（最多1000天）
-            # 多取2天确保覆盖周末节假日
+            # 腾讯接口：直接指定获取天数（最多 1000 天）
             fetch_days = min(days + 2, 1000)
             url = f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param={market_code},day,,,{fetch_days},qfq"
             
@@ -677,13 +781,12 @@ class AKShareFetcher:
                 records = []
                 for item in klines:
                     if len(item) >= 6 and isinstance(item, list):
-                        # 腾讯格式: [日期, 开盘, 收盘, 最高, 最低, 成交量]
                         records.append({
                             'date': str(item[0]),
                             'open': float(item[1]),
                             'close': float(item[2]),
-                            'high': float(item[3]),  # 最高
-                            'low': float(item[4]),   # 最低
+                            'high': float(item[3]),
+                            'low': float(item[4]),
                             'volume': int(float(item[5])),
                             'amount': 0,
                             'turnover': 0,
@@ -692,7 +795,6 @@ class AKShareFetcher:
                 if records:
                     df = pd.DataFrame(records)
                     df['date'] = pd.to_datetime(df['date'])
-                    # 从实时数据获取总市值
                     market_cap = self._get_realtime_market_cap(stock_code)
                     if market_cap:
                         df['market_cap'] = market_cap
@@ -703,8 +805,53 @@ class AKShareFetcher:
             
             return None
         except Exception as e:
-            print(f"  获取更新数据失败: {e}")
+            print(f"  腾讯接口获取更新失败：{e}")
             return None
+    def _fetch_stock_update_tushare(self, stock_code, days=10):
+        """使用 tushare 获取近期数据（默认首选）"""
+        try:
+            ts_token = self._get_tushare_token()
+            if not ts_token:
+                return None
+            
+            import tushare as ts
+            from datetime import datetime, timedelta
+            
+            ts.set_token(ts_token)
+            pro = ts.pro_api()
+            
+            # 确定市场标识
+            if stock_code.startswith('6'):
+                ts_code = f"{stock_code}.SH"
+            else:
+                ts_code = f"{stock_code}.SZ"
+            
+            # 计算日期范围
+            end_date = datetime.now().strftime("%Y%m%d")
+            start_date = (datetime.now() - timedelta(days=days + 2)).strftime("%Y%m%d")
+            
+            df = pro.daily(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date
+            )
+            
+            if df is not None and not df.empty:
+                # 字段映射
+                df = df.rename(columns={
+                    'trade_date': 'date', 'open': 'open', 'high': 'high',
+                    'low': 'low', 'close': 'close', 'vol': 'volume',
+                    'amount': 'amount'
+                })
+                df['date'] = pd.to_datetime(df['date'])
+                df = df.sort_values('date', ascending=False)
+                return df
+            
+            return None
+        except Exception as e:
+            print(f"  tushare 获取更新失败：{e}")
+            return None
+
     
     def init_full_data(self, max_stocks=None, skip_failed=True):
         """
@@ -841,7 +988,7 @@ class AKShareFetcher:
         failed = 0
         skipped = 0
         
-        print(f"\n开始更新 {len(stock_codes)} 只股票的数据...")
+        print(f"\n开始更新 {len(existing_stocks)} 只股票的数据...")
         print("=" * 60)
         
         today = datetime.now().date()
@@ -882,22 +1029,21 @@ class AKShareFetcher:
         print("  正在检查股票更新状态...")
         
         for code in existing_stocks:
-            # 快速读取：只读CSV第一行（最新日期）
-            path = self.csv_manager.get_stock_path(code)
-            if not path.exists():
-                stocks_to_update.append((code, 30))  # 默认取30天
+            # 快速读取：使用 CSVManager 统一读取（自动兼容 Parquet/CSV）
+            existing_df = self.csv_manager.read_stock(code)
+            if existing_df is None or existing_df.empty:
+                stocks_to_update.append((code, 30))  # 默认取 30 天
                 continue
             
             try:
-                # 只读取第一行（header + 第一行数据）
-                df_quick = pd.read_csv(path, nrows=1)
-                if df_quick.empty:
-                    stocks_to_update.append((code, 30))
-                    continue
-                
-                latest_date = pd.to_datetime(df_quick.iloc[0]['date']).date()
+                # 确保日期列是 datetime 类型
+                df_temp = existing_df.copy()
+                if not pd.api.types.is_datetime64_any_dtype(df_temp["date"]):
+                    df_temp["date"] = pd.to_datetime(df_temp["date"])
+
+                latest_date = df_temp.iloc[0]['date'].date()
                 days_needed = (today - latest_date).days
-                
+
                 if days_needed > 0:
                     days_to_fetch = min(days_needed + 2, 60)
                     stocks_to_update.append((code, days_to_fetch))

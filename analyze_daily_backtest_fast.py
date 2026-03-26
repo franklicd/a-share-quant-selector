@@ -56,7 +56,7 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     if '行业' in df.columns:
         df['行业'] = df['行业'].fillna('未知')
         # 转换行业热度列为数值（处理字符串和数值混合的情况）
-        for col in ['行业热度_买入日', '行业热度_10pct 日', '行业热度_neg2pct 日', '行业热度_neg4pct 日', '行业热度_卖出日']:
+        for col in ['行业热度_买入日', '行业热度_10pct 日', '行业热度_5pct 日', '行业热度_neg2pct 日', '行业热度_neg4pct 日', '行业热度_卖出日']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col].astype(str).replace('-', ''), errors='coerce')
 
@@ -64,6 +64,7 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     has_trigger_data = '触发 +10% 日期' in df.columns
     if has_trigger_data:
         df['触发 +10% 日期'] = df['触发 +10% 日期'].replace('-', '').replace('', pd.NaT)
+        df['触发 +5% 日期'] = df['触发 +5% 日期'].replace('-', '').replace('', pd.NaT) if '触发 +5% 日期' in df.columns else None
         df['触发 -2% 日期'] = df['触发 -2% 日期'].replace('-', '').replace('', pd.NaT)
         df['触发 -4% 日期'] = df['触发 -4% 日期'].replace('-', '').replace('', pd.NaT)
         df['触发顺序'] = df['触发顺序'].replace('-', '')
@@ -73,6 +74,12 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     if has_10pct_day:
         df['达到 +10% 天数'] = df['达到 +10% 天数'].replace('-', '').str.replace('第', '').str.replace('天', '')
         df['达到 +10% 天数'] = pd.to_numeric(df['达到 +10% 天数'], errors='coerce')
+
+    # 处理达到 +5% 天数列
+    has_5pct_day = '达到 +5% 天数' in df.columns
+    if has_5pct_day:
+        df['达到 +5% 天数'] = df['达到 +5% 天数'].replace('-', '').str.replace('第', '').str.replace('天', '')
+        df['达到 +5% 天数'] = pd.to_numeric(df['达到 +5% 天数'], errors='coerce')
 
     # 设置行业数据标志
     has_industry_data = '行业' in df.columns

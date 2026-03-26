@@ -1,0 +1,1052 @@
+{
+  "config": {
+    "start_date": "2025-10-01",
+    "end_date": "2025-10-15",
+    "top_n": 10,
+    "hold_days": 30
+  },
+  "summary": {
+    "total_trades": 50,
+    "win_rate": 60.0,
+    "avg_return": 36.47908614137427
+  },
+  "daily_summary": [
+    {
+      "date": "2025-10-09",
+      "count": 10,
+      "win_count": 4,
+      "win_rate": 40.0,
+      "avg_return": 13.584979668481896
+    },
+    {
+      "date": "2025-10-10",
+      "count": 10,
+      "win_count": 8,
+      "win_rate": 80.0,
+      "avg_return": 43.17731861339489
+    },
+    {
+      "date": "2025-10-13",
+      "count": 10,
+      "win_count": 8,
+      "win_rate": 80.0,
+      "avg_return": 55.1182319206017
+    },
+    {
+      "date": "2025-10-14",
+      "count": 10,
+      "win_count": 4,
+      "win_rate": 40.0,
+      "avg_return": 26.298390401528643
+    },
+    {
+      "date": "2025-10-15",
+      "count": 10,
+      "win_count": 6,
+      "win_rate": 60.0,
+      "avg_return": 44.21651010286424
+    }
+  ],
+  "all_results": [
+    {
+      "selection_date": "2025-10-09",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 1,
+      "similarity_score": 97.77,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 9.77,
+      "sell_price": 18.5,
+      "return_pct": 89.35516888433982,
+      "max_gain_pct": 188.63868986693961,
+      "max_gain_day": 924,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "002681",
+      "name": "奋达科技",
+      "rank": 2,
+      "similarity_score": 95.82,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 4.89,
+      "sell_price": 5.6,
+      "return_pct": 14.519427402862986,
+      "max_gain_pct": 114.519427402863,
+      "max_gain_day": 503,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "605136",
+      "name": "丽人丽妆",
+      "rank": 3,
+      "similarity_score": 95.76,
+      "best_match_case": "case_001",
+      "best_match_date": "2025-05-12",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_001"
+      ],
+      "buy_price": 11.584,
+      "sell_price": 9.79,
+      "return_pct": -15.48687845303868,
+      "max_gain_pct": 46.40883977900554,
+      "max_gain_day": 672,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "000810",
+      "name": "创维数字",
+      "rank": 4,
+      "similarity_score": 95.37,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 15.252,
+      "sell_price": 10.8,
+      "return_pct": -29.189614476789927,
+      "max_gain_pct": 19.204038814581693,
+      "max_gain_day": 518,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "600228",
+      "name": "*ST返利",
+      "rank": 5,
+      "similarity_score": 94.89,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 9.33,
+      "sell_price": 7.99,
+      "return_pct": -14.362272240085744,
+      "max_gain_pct": 5.680600214362266,
+      "max_gain_day": 12,
+      "sell_date": "2023-08-25",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "001306",
+      "name": "夏厦精密",
+      "rank": 6,
+      "similarity_score": 94.18,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 109.52,
+      "sell_price": 67.28,
+      "return_pct": -38.568298027757486,
+      "max_gain_pct": 16.891891891891905,
+      "max_gain_day": 4,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "002555",
+      "name": "三七互娱",
+      "rank": 7,
+      "similarity_score": 94.18,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 23.466,
+      "sell_price": 22.42,
+      "return_pct": -4.457512997528336,
+      "max_gain_pct": 32.148640586380296,
+      "max_gain_day": 901,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "605319",
+      "name": "无锡振华",
+      "rank": 8,
+      "similarity_score": 94.11,
+      "best_match_case": "case_009",
+      "best_match_date": "2025-08-01",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_009"
+      ],
+      "buy_price": 11.136,
+      "sell_price": 23.75,
+      "return_pct": 113.27227011494254,
+      "max_gain_pct": 156.4385775862069,
+      "max_gain_day": 589,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "300457",
+      "name": "赢合科技",
+      "rank": 9,
+      "similarity_score": 93.81,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 26.592,
+      "sell_price": 24.29,
+      "return_pct": -8.656738868832731,
+      "max_gain_pct": 48.50330926594466,
+      "max_gain_day": 795,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-09",
+      "code": "603196",
+      "name": "日播时尚",
+      "rank": 10,
+      "similarity_score": 93.8,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 20.738,
+      "sell_price": 26.84,
+      "return_pct": 29.424245346706527,
+      "max_gain_pct": 41.238306490500534,
+      "max_gain_day": 931,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 1,
+      "similarity_score": 97.04,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 9.77,
+      "sell_price": 18.5,
+      "return_pct": 89.35516888433982,
+      "max_gain_pct": 188.63868986693961,
+      "max_gain_day": 924,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002886",
+      "name": "沃特股份",
+      "rank": 2,
+      "similarity_score": 96.26,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 17.861,
+      "sell_price": 21.44,
+      "return_pct": 20.03807177649628,
+      "max_gain_pct": 48.70387996192821,
+      "max_gain_day": 945,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603298",
+      "name": "杭叉集团",
+      "rank": 3,
+      "similarity_score": 95.13,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 16.036,
+      "sell_price": 24.18,
+      "return_pct": 50.785732102768755,
+      "max_gain_pct": 95.996507857321,
+      "max_gain_day": 944,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "605136",
+      "name": "丽人丽妆",
+      "rank": 4,
+      "similarity_score": 94.82,
+      "best_match_case": "case_001",
+      "best_match_date": "2025-05-12",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_001"
+      ],
+      "buy_price": 11.584,
+      "sell_price": 9.79,
+      "return_pct": -15.48687845303868,
+      "max_gain_pct": 46.40883977900554,
+      "max_gain_day": 672,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "300521",
+      "name": "爱司凯",
+      "rank": 5,
+      "similarity_score": 94.4,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_003"
+      ],
+      "buy_price": 13.29,
+      "sell_price": 27.78,
+      "return_pct": 109.02934537246051,
+      "max_gain_pct": 197.14070729872088,
+      "max_gain_day": 914,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603266",
+      "name": "天龙股份",
+      "rank": 6,
+      "similarity_score": 94.1,
+      "best_match_case": "case_008",
+      "best_match_date": "2025-07-10",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_008"
+      ],
+      "buy_price": 13.64,
+      "sell_price": 18.45,
+      "return_pct": 35.263929618768316,
+      "max_gain_pct": 249.04692082111436,
+      "max_gain_day": 104,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002164",
+      "name": "宁波东力",
+      "rank": 7,
+      "similarity_score": 94.05,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 5.87,
+      "sell_price": 12.02,
+      "return_pct": 104.77001703577511,
+      "max_gain_pct": 216.52470187393521,
+      "max_gain_day": 879,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "603912",
+      "name": "佳力图",
+      "rank": 8,
+      "similarity_score": 93.84,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 9.16,
+      "sell_price": 10.06,
+      "return_pct": 9.825327510917035,
+      "max_gain_pct": 29.912663755458517,
+      "max_gain_day": 754,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "600228",
+      "name": "*ST返利",
+      "rank": 9,
+      "similarity_score": 93.66,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 9.33,
+      "sell_price": 7.99,
+      "return_pct": -14.362272240085744,
+      "max_gain_pct": 5.680600214362266,
+      "max_gain_day": 12,
+      "sell_date": "2023-08-25",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-10",
+      "code": "002664",
+      "name": "信质集团",
+      "rank": 10,
+      "similarity_score": 93.65,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 13.7,
+      "sell_price": 19.53,
+      "return_pct": 42.55474452554746,
+      "max_gain_pct": 160.07299270072997,
+      "max_gain_day": 784,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603683",
+      "name": "晶华新材",
+      "rank": 1,
+      "similarity_score": 96.07,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 10.955,
+      "sell_price": 27.75,
+      "return_pct": 153.30899132816066,
+      "max_gain_pct": 234.185303514377,
+      "max_gain_day": 791,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002920",
+      "name": "德赛西威",
+      "rank": 2,
+      "similarity_score": 94.54,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 154.56,
+      "sell_price": 110.8,
+      "return_pct": -28.312629399585926,
+      "max_gain_pct": 7.550465838509308,
+      "max_gain_day": 11,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "688237",
+      "name": "超卓航科",
+      "rank": 3,
+      "similarity_score": 93.94,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 43.79,
+      "sell_price": 48.7,
+      "return_pct": 11.21260561772095,
+      "max_gain_pct": 42.68097739209865,
+      "max_gain_day": 830,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "301029",
+      "name": "怡合达",
+      "rank": 4,
+      "similarity_score": 93.86,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 37.73,
+      "sell_price": 24.49,
+      "return_pct": -35.09143917307183,
+      "max_gain_pct": 5.327325735489015,
+      "max_gain_day": 6,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603266",
+      "name": "天龙股份",
+      "rank": 5,
+      "similarity_score": 93.7,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_003"
+      ],
+      "buy_price": 13.64,
+      "sell_price": 18.45,
+      "return_pct": 35.263929618768316,
+      "max_gain_pct": 249.04692082111436,
+      "max_gain_day": 104,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002624",
+      "name": "完美世界",
+      "rank": 6,
+      "similarity_score": 93.6,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 13.685,
+      "sell_price": 17.83,
+      "return_pct": 30.28863719400802,
+      "max_gain_pct": 73.03617099013518,
+      "max_gain_day": 929,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "603196",
+      "name": "日播时尚",
+      "rank": 7,
+      "similarity_score": 93.53,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 20.738,
+      "sell_price": 26.84,
+      "return_pct": 29.424245346706527,
+      "max_gain_pct": 41.238306490500534,
+      "max_gain_day": 931,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002558",
+      "name": "巨人网络",
+      "rank": 8,
+      "similarity_score": 93.41,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 13.332,
+      "sell_price": 32.12,
+      "return_pct": 140.9240924092409,
+      "max_gain_pct": 300.16501650165014,
+      "max_gain_day": 908,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "002239",
+      "name": "奥特佳",
+      "rank": 9,
+      "similarity_score": 93.35,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 2.728,
+      "sell_price": 3.02,
+      "return_pct": 10.703812316715535,
+      "max_gain_pct": 57.55131964809384,
+      "max_gain_day": 118,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-13",
+      "code": "300984",
+      "name": "金沃股份",
+      "rank": 10,
+      "similarity_score": 93.14,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 18.121,
+      "sell_price": 54.99,
+      "return_pct": 203.4600739473539,
+      "max_gain_pct": 396.4405937862149,
+      "max_gain_day": 904,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "002011",
+      "name": "盾安环境",
+      "rank": 1,
+      "similarity_score": 96.58,
+      "best_match_case": "case_003",
+      "best_match_date": "2025-06-20",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_003"
+      ],
+      "buy_price": 13.48,
+      "sell_price": 12.35,
+      "return_pct": -8.382789317507424,
+      "max_gain_pct": 15.356083086053415,
+      "max_gain_day": 789,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "300715",
+      "name": "凯伦股份",
+      "rank": 2,
+      "similarity_score": 95.38,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 14.785,
+      "sell_price": 13.36,
+      "return_pct": -9.638146770375384,
+      "max_gain_pct": 6.425431180250249,
+      "max_gain_day": 4,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "300688",
+      "name": "创业黑马",
+      "rank": 3,
+      "similarity_score": 94.53,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 31.565,
+      "sell_price": 27.1,
+      "return_pct": -14.145414224615871,
+      "max_gain_pct": 32.425154443212406,
+      "max_gain_day": 580,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603926",
+      "name": "铁流股份",
+      "rank": 4,
+      "similarity_score": 94.03,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 9.77,
+      "sell_price": 18.5,
+      "return_pct": 89.35516888433982,
+      "max_gain_pct": 188.63868986693961,
+      "max_gain_day": 924,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603216",
+      "name": "梦天家居",
+      "rank": 5,
+      "similarity_score": 93.99,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 12.79,
+      "sell_price": 33.62,
+      "return_pct": 162.86161063330727,
+      "max_gain_pct": 360.04691164972644,
+      "max_gain_day": 922,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "603486",
+      "name": "科沃斯",
+      "rank": 6,
+      "similarity_score": 93.78,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 72.916,
+      "sell_price": 61.24,
+      "return_pct": -16.0129464040814,
+      "max_gain_pct": 53.176257611498166,
+      "max_gain_day": 784,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "301479",
+      "name": "弘景光电",
+      "rank": 7,
+      "similarity_score": 93.57,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 113.264,
+      "sell_price": 72.114,
+      "return_pct": -36.33104958327446,
+      "max_gain_pct": 5.56222630315016,
+      "max_gain_day": 0,
+      "sell_date": "2025-04-17",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "688230",
+      "name": "芯导科技",
+      "rank": 8,
+      "similarity_score": 93.45,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 41.19,
+      "sell_price": 62.97,
+      "return_pct": 52.87691187181355,
+      "max_gain_pct": 116.67880553532413,
+      "max_gain_day": 796,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "688328",
+      "name": "深科达",
+      "rank": 9,
+      "similarity_score": 93.44,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 25.23,
+      "sell_price": 38.75,
+      "return_pct": 53.58699960364645,
+      "max_gain_pct": 98.77130400317083,
+      "max_gain_day": 965,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-14",
+      "code": "301046",
+      "name": "能辉科技",
+      "rank": 10,
+      "similarity_score": 93.39,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 29.5,
+      "sell_price": 26.2,
+      "return_pct": -11.186440677966104,
+      "max_gain_pct": 14.813559322033889,
+      "max_gain_day": 868,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "603216",
+      "name": "梦天家居",
+      "rank": 1,
+      "similarity_score": 96.54,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 12.79,
+      "sell_price": 33.62,
+      "return_pct": 162.86161063330727,
+      "max_gain_pct": 360.04691164972644,
+      "max_gain_day": 922,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "600176",
+      "name": "中国巨石",
+      "rank": 2,
+      "similarity_score": 95.77,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 13.875,
+      "sell_price": 22.65,
+      "return_pct": 63.24324324324323,
+      "max_gain_pct": 108.21621621621622,
+      "max_gain_day": 950,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "603918",
+      "name": "金桥信息",
+      "rank": 3,
+      "similarity_score": 95.47,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 27.96,
+      "sell_price": 13.87,
+      "return_pct": -50.39341917024321,
+      "max_gain_pct": 17.095851216022893,
+      "max_gain_day": 34,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000069",
+      "name": "华侨城Ａ",
+      "rank": 4,
+      "similarity_score": 95.29,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 4.69,
+      "sell_price": 2.29,
+      "return_pct": -51.1727078891258,
+      "max_gain_pct": 7.036247334754779,
+      "max_gain_day": 8,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "002244",
+      "name": "滨江集团",
+      "rank": 5,
+      "similarity_score": 94.93,
+      "best_match_case": "case_004",
+      "best_match_date": "2025-07-23",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_004"
+      ],
+      "buy_price": 9.558,
+      "sell_price": 10.2,
+      "return_pct": 6.7168863779033225,
+      "max_gain_pct": 33.919229964427714,
+      "max_gain_day": 796,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000892",
+      "name": "欢瑞世纪",
+      "rank": 6,
+      "similarity_score": 94.8,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 4.18,
+      "sell_price": 6.0,
+      "return_pct": 43.54066985645934,
+      "max_gain_pct": 136.1244019138756,
+      "max_gain_day": 930,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688237",
+      "name": "超卓航科",
+      "rank": 7,
+      "similarity_score": 94.25,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 43.79,
+      "sell_price": 48.7,
+      "return_pct": 11.21260561772095,
+      "max_gain_pct": 42.68097739209865,
+      "max_gain_day": 830,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688127",
+      "name": "蓝特光学",
+      "rank": 8,
+      "similarity_score": 94.21,
+      "best_match_case": "case_006",
+      "best_match_date": "2025-08-04",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_006"
+      ],
+      "buy_price": 15.54,
+      "sell_price": 60.04,
+      "return_pct": 286.3577863577864,
+      "max_gain_pct": 324.0669240669241,
+      "max_gain_day": 958,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "688779",
+      "name": "五矿新能",
+      "rank": 9,
+      "similarity_score": 94.13,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 10.87,
+      "sell_price": 10.76,
+      "return_pct": -1.0119595216191302,
+      "max_gain_pct": 17.57129714811408,
+      "max_gain_day": 958,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    },
+    {
+      "selection_date": "2025-10-15",
+      "code": "000810",
+      "name": "创维数字",
+      "rank": 10,
+      "similarity_score": 94.08,
+      "best_match_case": "case_002",
+      "best_match_date": "2025-08-06",
+      "category": "bowl_center",
+      "reasons": [
+        "匹配case_002"
+      ],
+      "buy_price": 15.252,
+      "sell_price": 10.8,
+      "return_pct": -29.189614476789927,
+      "max_gain_pct": 19.204038814581693,
+      "max_gain_day": 518,
+      "sell_date": "2026-03-20",
+      "hold_days": 30
+    }
+  ]
+}

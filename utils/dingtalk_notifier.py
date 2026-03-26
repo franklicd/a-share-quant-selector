@@ -1084,11 +1084,19 @@ class DingTalkNotifier:
             close = r.get('close', '-')
             j_val = r.get('J', '-')
             breakdown = r.get('breakdown', {})
+            industry = r.get('industry', '未知')
+            industry_heat = r.get('industry_heat', 'N/A')
+            description = r.get('description', '')
             
             # 股票信息（空行分隔）
             lines.append(f"{rank} **{stock_code}** {stock_name}  **相似度: {score}%**")
+            lines.append(f"   行业：{industry} | 热度：{industry_heat}")
             lines.append(f"   匹配: {matched_case} ({matched_date})")
-            
+
+            # 案例描述/趋势
+            if description:
+                lines.append(f"   趋势：{description}")
+
             # 分项得分
             trend_score = breakdown.get('trend_structure', 0)
             kdj_score = breakdown.get('kdj_state', 0)

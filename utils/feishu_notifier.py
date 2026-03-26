@@ -640,18 +640,25 @@ class FeishuNotifier:
             # 新增行业信息
             industry = r.get('industry', '未知')
             industry_heat = r.get('industry_heat')
+            # 新增匹配原因/趋势描述
+            description = r.get('description', '')
 
-            # 行业热度显示
-            if industry_heat is not None:
-                if industry_heat >= 70:
-                    heat_emoji = '🔥'
-                    heat_label = f'{industry_heat}分 (高热度)'
-                elif industry_heat >= 50:
-                    heat_emoji = '📈'
-                    heat_label = f'{industry_heat}分 (中等)'
-                else:
-                    heat_emoji = '❄️'
-                    heat_label = f'{industry_heat}分 (冷门)'
+            # 行业热度显示（处理 N/A 字符串情况）
+            if industry_heat is not None and industry_heat != 'N/A':
+                try:
+                    heat_val = float(industry_heat)
+                    if heat_val >= 70:
+                        heat_emoji = '🔥'
+                        heat_label = f'{heat_val:.1f}分 (高热度)'
+                    elif heat_val >= 50:
+                        heat_emoji = '📈'
+                        heat_label = f'{heat_val:.1f}分 (中等)'
+                    else:
+                        heat_emoji = '❄️'
+                        heat_label = f'{heat_val:.1f}分 (冷门)'
+                except (ValueError, TypeError):
+                    heat_emoji = '❓'
+                    heat_label = 'N/A'
             else:
                 heat_emoji = '❓'
                 heat_label = 'N/A'
@@ -660,6 +667,11 @@ class FeishuNotifier:
             lines.append(f"{rank} **{stock_code}** {stock_name}  **相似度：{score}%**")
             lines.append(f"   行业：{heat_emoji} {industry} ({heat_label})")
             lines.append(f"   匹配: {matched_case} ({matched_date})")
+
+            # 显示匹配原因/趋势描述
+            if description:
+                lines.append(f"   趋势：{description}")
+
             
             trend_score = breakdown.get('trend_structure', 0)
             kdj_score = breakdown.get('kdj_state', 0)

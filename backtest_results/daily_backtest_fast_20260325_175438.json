@@ -1,0 +1,15 @@
+{
+  "config": {
+    "start_date": "2026-03-24",
+    "end_date": "2026-03-24",
+    "top_n": 3,
+    "hold_days": 30
+  },
+  "summary": {
+    "total_trades": 0,
+    "win_rate": 0,
+    "avg_return": 0
+  },
+  "daily_summary": [],
+  "all_results": []
+}

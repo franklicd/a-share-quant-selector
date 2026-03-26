@@ -129,6 +129,7 @@ class B1PatternLibrary:
                     "similarity_score": similarity["total_score"],
                     "breakdown": similarity["breakdown"],
                     "tags": case_data["meta"].get("tags", []),
+                    "description": case_data["meta"].get("description", ""),
                 })
             except Exception as e:
                 print(f"  ⚠️ 匹配 {case_id} 失败: {e}")

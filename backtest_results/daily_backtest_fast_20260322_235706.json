@@ -1,0 +1,15 @@
+{
+  "config": {
+    "start_date": "2025-10-01",
+    "end_date": "2025-10-15",
+    "top_n": 10,
+    "hold_days": 30
+  },
+  "summary": {
+    "total_trades": 0,
+    "win_rate": 0,
+    "avg_return": 0
+  },
+  "daily_summary": [],
+  "all_results": []
+}

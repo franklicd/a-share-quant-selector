@@ -3,7 +3,7 @@
 行业数据获取模块
 
 功能：
-1. 从多源获取股票所属行业的完整映射关系（东方财富 HTTP 接口优先，akshare 备选）
+1. 从 tushare 获取申万行业分类数据（2000 积分权限）
 2. 计算行业热度指标（复合版：成交额占比 + 成交额环比）
 3. 成交额持久化缓存（历史数据不变，一次计算永久使用）
 
@@ -11,9 +11,9 @@
 行业热度 = 0.6 × 成交额占比分位数 + 0.4 × 成交额环比
 
 数据源优先级：
-1. 本地缓存（7 天内有效）
-2. 东方财富 HTTP 接口（稳定，不依赖 akshare）
-3. akshare（备选）
+1. 本地缓存（180 天内有效）
+2. tushare 申万行业分类接口（2000 积分权限）
+3. 东方财富 HTTP 接口（备选）
 4. 内置映射（降级，覆盖约 300 只主要股票）
 """
 import json
@@ -33,7 +33,7 @@ class IndustryFetcher:
     """
     行业数据获取器
 
-    从 akshare 获取东财/同花顺行业分类数据
+    从 tushare 获取申万行业分类数据（优先），东方财富 HTTP 接口备选
     """
 
     def __init__(self, cache_dir=None):
@@ -78,7 +78,7 @@ class IndustryFetcher:
             # 缓存未过期，直接加载
             if cache_age_days is not None and cache_age_days < cache_days:
                 try:
-                    with open(cache_file, 'r', encoding='utf-8') as f:
+                    with open(cache_file, 'w', encoding='utf-8') as f:
                         data = json.load(f)
                         self.stock_industry_map = data.get('stock_industry', {})
                         self.industry_stocks_map = data.get('industry_stocks', {})
@@ -99,19 +99,101 @@ class IndustryFetcher:
             elif cache_age_days is not None:
                 print(f"  ℹ️  缓存已过期 ({cache_age_days}天前)，将刷新行业数据")
 
-        # 从 HTTP 接口获取（优先）
-        if self._fetch_industry_mapping_from_http():
+        # 从 tushare 获取申万行业数据（优先，2000 积分权限）
+        if self._fetch_industry_mapping_from_tushare():
             self._save_cache(cache_file, cache_meta_file)
             return True
 
-        # HTTP 失败，尝试 akshare
-        if self._fetch_industry_mapping_from_akshare():
+        # tushare 失败，从 HTTP 接口获取（东方财富备选）
+        if self._fetch_industry_mapping_from_http():
             self._save_cache(cache_file, cache_meta_file)
             return True
 
         # 都失败，使用内置映射
         self._load_builtin_industry_map()
         return True
+
+    def _fetch_industry_mapping_from_tushare(self):
+        """
+        从 tushare 获取申万行业分类数据
+
+        接口说明：
+        - index_classify: 申万行业分类列表
+        - index_member: 指数成分股
+
+        数据源：tushare (SW2021 申万行业分类)
+        """
+        try:
+            print("  正在从 tushare 获取申万行业分类数据...")
+
+            # 导入 tushare
+            import tushare as ts
+            import os
+
+            # 获取 token
+            ts_token = os.environ.get('TUSHARE_TOKEN')
+            if not ts_token:
+                print("  ⚠️ 未配置 TUSHARE_TOKEN，跳过 tushare 接口")
+                return False
+
+            ts.set_token(ts_token)
+            pro = ts.pro_api()
+
+            self.stock_industry_map = {}
+            self.industry_stocks_map = {}
+
+            # 1. 获取申万行业分类列表（一级行业）
+            print("  获取申万一级行业分类...")
+            industries = pro.query('index_classify', level='L1', src='SW2021')
+
+            if industries is None or len(industries) == 0:
+                print("  ⚠️ tushare 返回空数据")
+                return False
+
+            print(f"  ✓ 获取到 {len(industries)} 个一级行业")
+
+            # 2. 遍历每个行业，获取成分股
+            for idx, row in industries.iterrows():
+                index_code = row['index_code']
+                industry_name = row['industry_name']
+
+                if not index_code or not industry_name:
+                    continue
+
+                try:
+                    # 获取行业成分股
+                    members = pro.query('index_member', index_code=index_code, is_in='1')
+
+                    if members is not None and len(members) > 0:
+                        # 提取股票代码列表（con_code 字段）
+                        stocks = members['con_code'].dropna().unique().tolist()
+                        # 清理股票代码（去掉.SZ/.SH 后缀）
+                        stocks = [code.split('.')[0] for code in stocks if code and len(code) >= 6]
+
+                        if stocks:
+                            self.industry_stocks_map[industry_name] = stocks
+                            for code in stocks:
+                                if code not in self.stock_industry_map:
+                                    self.stock_industry_map[code] = industry_name
+
+                except Exception as e:
+                    print(f"  ⚠️ 获取行业 {industry_name} 成分股失败：{e}")
+                    continue
+
+                # 进度显示
+                if (idx + 1) % 10 == 0:
+                    print(f"  进度：{idx + 1}/{len(industries)} 行业...")
+
+            if self.stock_industry_map:
+                print(f"  ✓ tushare 获取完成：{len(self.stock_industry_map)} 只股票，{len(self.industry_stocks_map)} 个行业")
+                return True
+            else:
+                print("  ⚠️ tushare 未获取到有效数据")
+                return False
+
+        except Exception as e:
+            print(f"  ⚠️ tushare 获取行业数据失败：{e}")
+            return False
 
     def _save_cache(self, cache_file, cache_meta_file):
         """保存行业映射到缓存"""
@@ -757,10 +839,10 @@ class IndustryHeatCalculator:
         if not industry_stocks:
             return None
 
-        # 获取该日期的成交额数据（必须是指定日期，不能用其他日期替代）
+        # 获取该日期的成交额数据
         date_turnover = turnover_cache.get(date, {})
 
-        # 如果指定日期没有数据，返回 None（不使用其他日期替代）
+        # 如果指定日期没有数据，返回 None
         if not date_turnover:
             return None
 
@@ -794,19 +876,64 @@ class IndustryHeatCalculator:
         # 3. 计算成交额占比
         turnover_ratio = industry_turnover / market_turnover
 
-        # 4. 标准化处理
+        # 4. 计算环比（需要前一交易日数据）
+        turnover_change = 0
+        has_change_data = False
+
+        # 查找前一交易日
+        prev_date = self._find_prev_trade_date(date, turnover_cache)
+        if prev_date:
+            prev_turnover = turnover_cache.get(prev_date, {})
+            if prev_turnover:
+                # 计算行业昨日成交额
+                prev_industry_turnover = sum(prev_turnover.get(code, 0) for code in industry_stocks if code in prev_turnover)
+                if prev_industry_turnover > 0:
+                    turnover_change = (industry_turnover - prev_industry_turnover) / prev_industry_turnover
+                    has_change_data = True
+
+        # 5. 标准化处理
         # 成交额占比通常 0.01-0.15，转换为 0-100 分数
         ratio_score = turnover_ratio * 1000
         ratio_score = min(100, max(0, ratio_score))
 
-        # 简单版本：不使用环比数据（因为需要前一天的缓存）
-        # 假设环比为中性 50 分
-        change_score = 50
+        # 成交额环比范围 -1.0 到 +2.0，转换为 0-100 分数
+        # 0% 变化 = 50 分，+100% = 100 分，-100% = 0 分
+        if has_change_data:
+            change_score = 50 + turnover_change * 50
+            change_score = min(100, max(0, change_score))
+        else:
+            change_score = 50  # 没有环比数据时取中性值
 
-        # 5. 复合热度分数
+        # 6. 复合热度分数
         heat_score = 0.6 * ratio_score + 0.4 * change_score
 
         return round(heat_score, 2)
+
+    def _find_prev_trade_date(self, date_str, turnover_cache):
+        """
+        在缓存中查找给定日期的前一交易日
+        :param date_str: 日期字符串 (YYYY-MM-DD)
+        :param turnover_cache: 成交额缓存
+        :return: 前一交易日日期字符串，找不到返回 None
+        """
+        from datetime import datetime, timedelta
+
+        # 获取所有已有日期
+        available_dates = sorted(turnover_cache.keys())
+        if not available_dates:
+            return None
+
+        # 找到小于给定日期的最大日期
+        target = datetime.strptime(date_str, '%Y-%m-%d')
+        prev_date = None
+        for d in available_dates:
+            dt = datetime.strptime(d, '%Y-%m-%d')
+            if dt < target:
+                prev_date = d
+            else:
+                break
+
+        return prev_date
 
 
 # 便捷函数
