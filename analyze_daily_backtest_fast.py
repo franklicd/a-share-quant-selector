@@ -52,6 +52,10 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     df['选股日期'] = pd.to_datetime(df['选股日期'])
     df['卖出日期'] = pd.to_datetime(df['卖出日期'])
 
+    # 对股票代码去重，只保留每只股票第一次出现的记录
+    df = df.sort_values('选股日期').drop_duplicates(subset='代码', keep='first').reset_index(drop=True)
+    print(f"去重后样本数：{len(df)}（每只股票仅统计首次入选）")
+
     # 处理行业热度列（需要在 has_industry_data 检查之前处理）
     if '行业' in df.columns:
         df['行业'] = df['行业'].fillna('未知')
@@ -102,7 +106,7 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 **选股策略**: B1 完美图形匹配 + 碗口反弹技术指标
 **选股频率**: 每个交易日
 **持有期**: {hold_days} 天（自然日）
-**样本数量**: {len(df)} 只股票
+**样本数量**: {len(df)} 只股票（每只股票仅统计首次入选，已去重）
 
 ---
 
