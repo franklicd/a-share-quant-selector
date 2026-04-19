@@ -151,6 +151,17 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
             else:
                 max_gain_day = 0
 
+            # 计算持有期内最大跌幅（用最低价）
+            min_low = period_df['low'].min()
+            max_drop_pct = (min_low - buy_price) / buy_price * 100
+            min_low_row = period_df[period_df['low'] == min_low]
+            if len(min_low_row) > 0:
+                max_drop_date = min_low_row['date'].iloc[0].date()
+                max_drop_day = (max_drop_date - actual_buy_date).days
+            else:
+                max_drop_date = None
+                max_drop_day = 0
+
             # 止盈止损触发日期
             trigger_10pct_date = None
             trigger_5pct_date = None  # 新增：5% 止盈触发日期
@@ -204,6 +215,9 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
         else:
             max_gain_pct = return_pct
             max_gain_day = hold_days
+            max_drop_pct = return_pct
+            max_drop_date = None
+            max_drop_day = hold_days
             trigger_10pct_date = None
             trigger_5pct_date = None  # 新增
             trigger_neg2pct_date = None
@@ -269,6 +283,9 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
             'return_pct': return_pct,
             'max_gain_pct': max_gain_pct,
             'max_gain_day': max_gain_day,
+            'max_drop_pct': max_drop_pct,
+            'max_drop_date': str(max_drop_date) if max_drop_date else '',
+            'max_drop_day': max_drop_day,
             'sell_date': str(actual_sell_date) if actual_sell_date else '',
             'hold_days': hold_days,
             'trigger_10pct_date': str(trigger_10pct_date) if trigger_10pct_date else '',
@@ -918,6 +935,9 @@ class FastDailyBacktester:
                 '涨跌幅': f"{r['return_pct']:+.2f}%",
                 '最大涨幅': f"{r['max_gain_pct']:+.2f}%" if r.get('max_gain_pct') is not None else 'N/A',
                 '最大涨幅天数': f"第{r['max_gain_day']}天" if r.get('max_gain_day') is not None else 'N/A',
+                '最大跌幅': f"{r['max_drop_pct']:+.2f}%" if r.get('max_drop_pct') is not None else 'N/A',
+                '最大跌幅日期': r.get('max_drop_date', '') or '-',
+                '最大跌幅天数': f"第{r['max_drop_day']}天" if r.get('max_drop_day') is not None else 'N/A',
                 '卖出日期': r['sell_date'],
                 '持有天数': r['hold_days'],
                 '触发 +10% 日期': r.get('trigger_10pct_date', '') or '-',
