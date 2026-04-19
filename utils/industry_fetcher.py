@@ -989,6 +989,7 @@ class TurnoverCache:
         self.meta_file = self.cache_dir / 'turnover_cache_meta.json'
         self.cache = {}  # {date_str: {code: turnover}}
         self.metadata = {}  # 缓存元数据
+        self._saved_dates = set()  # 已持久化到磁盘的日期，用于增量写入
 
     def load(self):
         """
@@ -999,14 +1000,26 @@ class TurnoverCache:
             return False
 
         try:
-            # 加载缓存数据
+            import pickle
+            # 加载主缓存
             self.cache = pd.read_pickle(self.cache_file)
+
+            # 合并增量文件（如果存在）
+            delta_file = self.cache_file.with_name('turnover_cache_delta.pkl')
+            if delta_file.exists():
+                try:
+                    with open(delta_file, 'rb') as f:
+                        delta = pickle.load(f)
+                    self.cache.update(delta)
+                except Exception:
+                    pass
 
             # 加载元数据
             if self.meta_file.exists():
                 with open(self.meta_file, 'r', encoding='utf-8') as f:
                     self.metadata = json.load(f)
 
+            self._saved_dates = set(self.cache.keys())
             print(f"  ✓ 从缓存加载成交额数据：{len(self.cache)} 个交易日")
             return True
 
@@ -1015,28 +1028,58 @@ class TurnoverCache:
             return False
 
     def save(self):
-        """保存缓存到磁盘"""
+        """
+        增量保存缓存到磁盘。
+        只写入自上次 load/save 以来新增的日期，避免每次全量序列化 38MB 数据。
+        格式：主文件 turnover_cache.pkl（全量，首次或强制重建时写入）
+              增量文件 turnover_cache_delta.pkl（{date: data} 字典，追加新日期）
+        """
+        import pickle
         try:
-            # 保存缓存数据
-            buffer = io.BytesIO()
-            pd.to_pickle(self.cache, buffer)
-            with open(self.cache_file, 'wb') as f:
-                f.write(buffer.getvalue())
+            new_dates = set(self.cache.keys()) - self._saved_dates
+            if not new_dates:
+                return  # 没有新数据，跳过写入
 
-            # 保存元数据
+            # 增量文件：只写新增日期
+            delta_file = self.cache_file.with_name('turnover_cache_delta.pkl')
+            # 读取已有增量文件（如果存在）
+            existing_delta = {}
+            if delta_file.exists():
+                try:
+                    with open(delta_file, 'rb') as f:
+                        existing_delta = pickle.load(f)
+                except Exception:
+                    existing_delta = {}
+
+            for d in new_dates:
+                existing_delta[d] = self.cache[d]
+
+            with open(delta_file, 'wb') as f:
+                pickle.dump(existing_delta, f, protocol=4)
+
+            self._saved_dates.update(new_dates)
+
+            # 每累积 30 天增量，合并回主文件（避免增量文件无限增长）
+            if len(existing_delta) >= 30 or not self.cache_file.exists():
+                buffer = io.BytesIO()
+                pd.to_pickle(self.cache, buffer)
+                with open(self.cache_file, 'wb') as f:
+                    f.write(buffer.getvalue())
+                # 清空增量文件
+                if delta_file.exists():
+                    delta_file.unlink()
+                print(f"  ✓ 合并写入成交额缓存：{len(self.cache)} 个交易日")
+            else:
+                print(f"  ✓ 增量写入成交额缓存：新增 {len(new_dates)} 天（共 {len(self.cache)} 天）")
+
+            # 更新元数据
             self.metadata['last_updated'] = datetime.now().isoformat()
             self.metadata['date_count'] = len(self.cache)
-
-            # 计算覆盖的股票数量
-            all_codes = set()
-            for date_data in self.cache.values():
-                all_codes.update(date_data.keys())
-            self.metadata['stock_count'] = len(all_codes)
-
+            self.metadata['stock_count'] = len(set(
+                code for d in list(self.cache.values())[:5] for code in d
+            ))  # 只采样5天估算，避免全量遍历
             with open(self.meta_file, 'w', encoding='utf-8') as f:
                 json.dump(self.metadata, f, ensure_ascii=False, indent=2)
-
-            print(f"  ✓ 保存成交额缓存：{len(self.cache)} 个交易日，{self.metadata['stock_count']} 只股票")
 
         except Exception as e:
             print(f"  ⚠️ 保存成交额缓存失败：{e}")
