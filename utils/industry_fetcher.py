@@ -649,6 +649,9 @@ class IndustryHeatCalculator:
             self.fetcher = IndustryFetcher()
         else:
             self.fetcher = industry_fetcher
+        # 每日分位数缓存：{date: (market_turnover, {ind: ratio}, sorted_ratios)}
+        # 同一天多次调用时，全市场行业占比只计算一次
+        self._daily_ratios_cache = {}
 
     def _get_stock_turnover(self, code, date, stock_data_dict):
         """
@@ -815,23 +818,28 @@ class IndustryHeatCalculator:
 
         target_ratio = industry_turnover / market_turnover
 
-        # 3. 计算所有行业的成交额占比，用于分位数排名
-        all_industries = self.fetcher.get_all_industries()
-        all_ratios = []
-        for ind in all_industries:
-            stocks = self.fetcher.get_stocks_in_industry(ind)
-            if not stocks:
-                continue
-            ind_turnover = sum(date_turnover.get(code, 0) for code in stocks if code in date_turnover)
-            if ind_turnover > 0:
-                all_ratios.append(ind_turnover / market_turnover)
+        # 3. 计算所有行业的成交额占比，用于分位数排名（同一天只算一次，缓存复用）
+        if date not in self._daily_ratios_cache:
+            all_industries = self.fetcher.get_all_industries()
+            ind_ratios = {}
+            for ind in all_industries:
+                stocks = self.fetcher.get_stocks_in_industry(ind)
+                if not stocks:
+                    continue
+                ind_turnover = sum(date_turnover.get(code, 0) for code in stocks if code in date_turnover)
+                if ind_turnover > 0:
+                    ind_ratios[ind] = ind_turnover / market_turnover
+            self._daily_ratios_cache[date] = (market_turnover, ind_ratios, sorted(ind_ratios.values()))
 
-        if not all_ratios:
+        _, ind_ratios, sorted_ratios = self._daily_ratios_cache[date]
+
+        if not sorted_ratios:
             return None, None
 
         # 4. 分位数排名：目标行业占比在所有行业中排第几（0-100分）
-        rank = sum(1 for r in all_ratios if r <= target_ratio)
-        heat_score = round(rank / len(all_ratios) * 100, 1)
+        import bisect
+        rank = bisect.bisect_right(sorted_ratios, target_ratio)
+        heat_score = round(rank / len(sorted_ratios) * 100, 1)
 
         # 5. 计算较前一交易日的占比变化百分比
         heat_change_pct = None
@@ -839,10 +847,15 @@ class IndustryHeatCalculator:
         if prev_date:
             prev_turnover = turnover_cache.get(prev_date, {})
             if prev_turnover:
-                prev_market_turnover = sum(prev_turnover.get(code, 0) for code in all_market_stocks)
-                prev_industry_turnover = sum(prev_turnover.get(code, 0) for code in industry_stocks if code in prev_turnover)
-                if prev_market_turnover > 0 and prev_industry_turnover > 0:
-                    prev_ratio = prev_industry_turnover / prev_market_turnover
+                # 复用前一天的缓存（如果有），否则只算目标行业
+                if prev_date in self._daily_ratios_cache:
+                    prev_market_turnover, prev_ind_ratios, _ = self._daily_ratios_cache[prev_date]
+                    prev_ratio = prev_ind_ratios.get(industry_name)
+                else:
+                    prev_market_turnover = sum(prev_turnover.get(code, 0) for code in all_market_stocks)
+                    prev_industry_turnover = sum(prev_turnover.get(code, 0) for code in industry_stocks if code in prev_turnover)
+                    prev_ratio = prev_industry_turnover / prev_market_turnover if prev_market_turnover > 0 and prev_industry_turnover > 0 else None
+                if prev_ratio:
                     heat_change_pct = round((target_ratio - prev_ratio) / prev_ratio * 100, 1)
 
         return heat_score, heat_change_pct
