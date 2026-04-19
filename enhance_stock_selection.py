@@ -65,8 +65,9 @@ def enhance_with_industry_heat(matched_results: list, stock_data_dict: dict, dat
         if industry:
             # 计算行业热度
             try:
-                industry_heat = industry_calc.calculate_industry_heat(
-                    industry, today, stock_data_dict, all_stock_codes)
+                # 使用快速版本，返回 (heat_score, heat_change_pct)
+                industry_heat, _ = industry_calc.calculate_industry_heat_fast(
+                    industry, today, turnover_cache, all_stock_codes)
             except Exception as e:
                 print(f"  ⚠️ 计算 {code} 行业热度失败：{e}")
 

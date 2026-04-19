@@ -253,8 +253,9 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
                 turnover_cache = preloaded_data.get('turnover_cache', {})
                 if turnover_cache and date_str in turnover_cache:
                     heat_calc = IndustryHeatCalculator(industry_fetcher)
-                    return heat_calc.calculate_industry_heat_fast(
+                    heat_score, _ = heat_calc.calculate_industry_heat_fast(
                         industry, date_str, turnover_cache, stock_keys)
+                    return heat_score
             except:
                 pass
             return None
@@ -792,10 +793,10 @@ class FastDailyBacktester:
         for ind_name in industries_to_compute:
             preloaded_data['industry_heats'][ind_name] = {}
             for date_str in trading_dates_str:
-                heat = industry_cache.calculate_industry_heat_fast(
+                heat_score, _ = industry_cache.calculate_industry_heat_fast(
                     ind_name, date_str, turnover_cache, all_stocks)
-                if heat is not None:
-                    preloaded_data['industry_heats'][ind_name][date_str] = heat
+                if heat_score is not None:
+                    preloaded_data['industry_heats'][ind_name][date_str] = heat_score
         print(f"  ✓ 行业热度预计算完成：{len(preloaded_data['industry_heats'])} 个行业")
 
         # 准备任务列表（添加预加载数据）

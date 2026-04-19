@@ -759,8 +759,8 @@ class IndustryHeatCalculator:
         heats = []
 
         for date in dates:
-            heat = self.calculate_industry_heat(industry_name, date, stock_data_dict)
-            heats.append(heat if heat is not None else np.nan)
+            heat_score, _ = self.calculate_industry_heat(industry_name, date, stock_data_dict)
+            heats.append(heat_score if heat_score is not None else np.nan)
 
         return pd.DataFrame({
             'date': dates,
@@ -771,100 +771,81 @@ class IndustryHeatCalculator:
     def calculate_industry_heat_fast(self, industry_name, date, turnover_cache, all_market_stocks=None, stock_data_dict=None):
         """
         【统一标准版本】行业热度计算（全链路唯一标准）
-        计算公式：热度 = 成交额占比分值 * 0.7 + 环比分值 * 0.3
-        分档标准：≥30=高热度、15-30=中热度、5-15=低热度、<5=极低热度
-        
+
+        返回两个独立指标：
+        - heat_score (0-100)：该行业成交额占比在全市场所有行业中的分位数排名
+          （100=占比最高的行业，0=占比最低）
+        - heat_change_pct (float|None)：较前一交易日的成交额占比变化百分比
+          （+15.3 表示占比上升15.3%，-8.0 表示占比下降8.0%）
+
         :param industry_name: 行业名称
         :param date: 日期字符串 (str)
         :param turnover_cache: {date_str: {code: turnover}} 成交额缓存
         :param all_market_stocks: 全市场股票代码列表
-        :param stock_data_dict: 股票数据字典（可选，用于 fallback 计算）
-        :return: 热度分数 (0-100)，计算失败返回 None
+        :param stock_data_dict: 股票数据字典（可选，保留兼容性）
+        :return: (heat_score, heat_change_pct) 元组，计算失败返回 (None, None)
         """
         # 获取行业成分股
         industry_stocks = self.fetcher.get_stocks_in_industry(industry_name)
-
         if not industry_stocks:
-            return None
+            return None, None
 
         # 获取该日期的成交额数据
         date_turnover = turnover_cache.get(date, {})
-
-        # 如果指定日期没有数据，返回 None
         if not date_turnover:
-            return None
+            return None, None
 
         # === 样本量校验 ===
-        sample_count = len(date_turnover)
-        MIN_REQUIRED_SAMPLES = 500  # 最少需要500只股票的成交额数据才有效
-        if sample_count < MIN_REQUIRED_SAMPLES:
-            # 样本量不足，不计算热度，避免分数失真
-            return None
+        MIN_REQUIRED_SAMPLES = 500
+        if len(date_turnover) < MIN_REQUIRED_SAMPLES:
+            return None, None
 
-        # 1. 计算行业今日总成交额
-        industry_turnover = 0
-        valid_count = 0
-
-        for code in industry_stocks:
-            if code in date_turnover:
-                industry_turnover += date_turnover[code]
-                valid_count += 1
-
-        if valid_count == 0 or industry_turnover == 0:
-            return None
-
-        # 2. 计算全市场今日总成交额
+        # 1. 计算全市场总成交额
         if all_market_stocks is None:
             all_market_stocks = list(date_turnover.keys())
 
-        market_turnover = 0
-        market_valid_count = 0
+        market_turnover = sum(date_turnover.get(code, 0) for code in all_market_stocks)
+        if market_turnover == 0:
+            return None, None
 
-        for code in all_market_stocks:
-            if code in date_turnover:
-                market_turnover += date_turnover[code]
-                market_valid_count += 1
+        # 2. 计算目标行业的成交额占比
+        industry_turnover = sum(date_turnover.get(code, 0) for code in industry_stocks if code in date_turnover)
+        if industry_turnover == 0:
+            return None, None
 
-        if market_valid_count == 0 or market_turnover == 0:
-            return None
+        target_ratio = industry_turnover / market_turnover
 
-        # 3. 计算成交额占比
-        turnover_ratio = industry_turnover / market_turnover
+        # 3. 计算所有行业的成交额占比，用于分位数排名
+        all_industries = self.fetcher.get_all_industries()
+        all_ratios = []
+        for ind in all_industries:
+            stocks = self.fetcher.get_stocks_in_industry(ind)
+            if not stocks:
+                continue
+            ind_turnover = sum(date_turnover.get(code, 0) for code in stocks if code in date_turnover)
+            if ind_turnover > 0:
+                all_ratios.append(ind_turnover / market_turnover)
 
-        # 4. 计算环比（需要前一交易日数据）
-        turnover_change = 0
-        has_change_data = False
+        if not all_ratios:
+            return None, None
 
-        # 查找前一交易日
+        # 4. 分位数排名：目标行业占比在所有行业中排第几（0-100分）
+        rank = sum(1 for r in all_ratios if r <= target_ratio)
+        heat_score = round(rank / len(all_ratios) * 100, 1)
+
+        # 5. 计算较前一交易日的占比变化百分比
+        heat_change_pct = None
         prev_date = self._find_prev_trade_date(date, turnover_cache)
         if prev_date:
             prev_turnover = turnover_cache.get(prev_date, {})
             if prev_turnover:
-                # 计算行业昨日成交额
+                prev_market_turnover = sum(prev_turnover.get(code, 0) for code in all_market_stocks)
                 prev_industry_turnover = sum(prev_turnover.get(code, 0) for code in industry_stocks if code in prev_turnover)
-                if prev_industry_turnover > 0:
-                    turnover_change = (industry_turnover - prev_industry_turnover) / prev_industry_turnover
-                    has_change_data = True
+                if prev_market_turnover > 0 and prev_industry_turnover > 0:
+                    prev_ratio = prev_industry_turnover / prev_market_turnover
+                    heat_change_pct = round((target_ratio - prev_ratio) / prev_ratio * 100, 1)
 
-        # 5. 标准化处理
-        # 成交额占比：× 1000 转换为分数（3%占比 = 30分，正好对应高热度阈值）
-        ratio_score = turnover_ratio * 1000
-        ratio_score = min(100, max(0, ratio_score))  # 限制在0-100
-
-        # 成交额环比：变化百分比直接作为分数，范围-100到100
-        if has_change_data:
-            change_score = turnover_change * 100
-            change_score = min(100, max(-100, change_score))
-        else:
-            change_score = 0  # 没有环比数据时取中性值
-
-        # 6. 复合热度分数（官方唯一标准）
-        # 权重：占比70%，环比30%
-        # 负环比会适当扣分，但最多扣到0
-        heat_score = ratio_score * 0.7 + change_score * 0.3
-        heat_score = min(100, max(0, heat_score))
-
-        return round(heat_score, 2)
+        return heat_score, heat_change_pct
 
     def _find_prev_trade_date(self, date_str, turnover_cache):
         """
