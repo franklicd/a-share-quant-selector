@@ -133,22 +133,20 @@ class IndustryFetcher:
 
     def _fetch_industry_mapping_from_tushare(self):
         """
-        从 tushare 获取申万行业分类数据
+        从 tushare stock_basic 接口获取东财行业分类数据
 
         接口说明：
-        - index_classify: 申万行业分类列表
-        - index_member: 指数成分股
+        - stock_basic: 股票基本信息，包含东财行业分类（110个细分行业）
+        - 比申万分类更贴近通达信的行业划分逻辑（按最终用途而非原材料）
 
-        数据源：tushare (SW2021 申万行业分类)
+        数据源：tushare stock_basic (东财行业分类)
         """
         try:
-            print("  正在从 tushare 获取申万行业分类数据...")
+            print("  正在从 tushare 获取东财行业分类数据...")
 
-            # 导入 tushare
             import tushare as ts
             import os
 
-            # 获取 token
             ts_token = os.environ.get('TUSHARE_TOKEN')
             if not ts_token:
                 print("  ⚠️ 未配置 TUSHARE_TOKEN，跳过 tushare 接口")
@@ -157,50 +155,30 @@ class IndustryFetcher:
             ts.set_token(ts_token)
             pro = ts.pro_api()
 
-            self.stock_industry_map = {}
-            self.industry_stocks_map = {}
+            # 一次性获取全量上市股票的行业分类
+            df = pro.stock_basic(exchange='', list_status='L', fields='ts_code,name,industry')
 
-            # 1. 获取申万行业分类列表（一级行业）
-            print("  获取申万一级行业分类...")
-            industries = pro.query('index_classify', level='L1', src='SW2021')
-
-            if industries is None or len(industries) == 0:
+            if df is None or len(df) == 0:
                 print("  ⚠️ tushare 返回空数据")
                 return False
 
-            print(f"  ✓ 获取到 {len(industries)} 个一级行业")
+            self.stock_industry_map = {}
+            self.industry_stocks_map = {}
 
-            # 2. 遍历每个行业，获取成分股
-            for idx, row in industries.iterrows():
-                index_code = row['index_code']
-                industry_name = row['industry_name']
+            for _, row in df.iterrows():
+                ts_code = row['ts_code']
+                industry = row['industry']
 
-                if not index_code or not industry_name:
+                if not ts_code or not industry or str(industry) == 'nan':
                     continue
 
-                try:
-                    # 获取行业成分股
-                    members = pro.query('index_member', index_code=index_code, is_in='1')
+                # 去掉 .SZ/.SH 后缀
+                code = ts_code.split('.')[0]
+                self.stock_industry_map[code] = industry
 
-                    if members is not None and len(members) > 0:
-                        # 提取股票代码列表（con_code 字段）
-                        stocks = members['con_code'].dropna().unique().tolist()
-                        # 清理股票代码（去掉.SZ/.SH 后缀）
-                        stocks = [code.split('.')[0] for code in stocks if code and len(code) >= 6]
-
-                        if stocks:
-                            self.industry_stocks_map[industry_name] = stocks
-                            for code in stocks:
-                                if code not in self.stock_industry_map:
-                                    self.stock_industry_map[code] = industry_name
-
-                except Exception as e:
-                    print(f"  ⚠️ 获取行业 {industry_name} 成分股失败：{e}")
-                    continue
-
-                # 进度显示
-                if (idx + 1) % 10 == 0:
-                    print(f"  进度：{idx + 1}/{len(industries)} 行业...")
+                if industry not in self.industry_stocks_map:
+                    self.industry_stocks_map[industry] = []
+                self.industry_stocks_map[industry].append(code)
 
             if self.stock_industry_map:
                 print(f"  ✓ tushare 获取完成：{len(self.stock_industry_map)} 只股票，{len(self.industry_stocks_map)} 个行业")
