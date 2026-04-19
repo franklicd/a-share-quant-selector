@@ -292,7 +292,8 @@ class QuantSystem:
         :param max_stocks: 限制处理的股票数量（用于快速测试）
         :param return_data: 是否返回股票数据字典（用于K线图生成）
         :param M_days: 碗口反弹策略的回溯天数 M，None 则使用配置文件值
-        :return: (results, stock_names) 或 (results, stock_names, stock_data_dict)
+        :return: (results, stock_names) 或 (results, stock_names, stock_data_dict, turnover_dict)
+                 turnover_dict: {date_str: {code: amount}} 从内存数据顺手提取，避免二次读盘
         """
         print("=" * 60)
         print("🎯 执行选股策略")
@@ -375,6 +376,7 @@ class QuantSystem:
         stock_data_cache = {}
         valid_codes = []
         invalid_count = 0
+        _turnover_dict = {}  # {date_str: {code: amount}}，顺手提取，避免后续二次读盘
         
         for i, code in enumerate(process_codes, 1):
             df = self.csv_manager.read_stock(code)
@@ -401,6 +403,21 @@ class QuantSystem:
             # 缓存有效股票数据
             stock_data_cache[code] = df
             valid_codes.append(code)
+
+            # 顺手提取最新两天的成交额（避免后续二次读盘）
+            if not df.empty:
+                for row_idx in range(min(2, len(df))):
+                    row = df.iloc[row_idx]
+                    d = row['date']
+                    row_date = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d)[:10]
+                    amt = row.get('amount', None)
+                    if pd.notna(amt) and amt > 0:
+                        _turnover_dict.setdefault(row_date, {})[code] = float(amt)
+                    else:
+                        vol = row.get('volume', 0)
+                        price = row.get('close', 0)
+                        if pd.notna(vol) and pd.notna(price) and vol > 0 and price > 0:
+                            _turnover_dict.setdefault(row_date, {})[code] = float(vol * price * 100)
 
             # 每500只显示进度
             if i % 500 == 0 or i == len(process_codes):
@@ -497,8 +514,8 @@ class QuantSystem:
         
         # 如果需要返回数据字典（用于K线图生成）
         if return_data:
-            # 返回计算了指标的数据（包含趋势线）
-            return results, stock_names, indicators_dict
+            # 返回计算了指标的数据（包含趋势线）+ 顺手提取的成交额
+            return results, stock_names, indicators_dict, _turnover_dict
         
         return results, stock_names
     
@@ -523,7 +540,7 @@ class QuantSystem:
         self._smart_update(max_stocks=max_stocks, force_update=force_update)
 
         # 2. 选股（返回数据和结果）
-        results, stock_names, stock_data_dict = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True, M_days=M_days, pick_date=pick_date)
+        results, stock_names, stock_data_dict, _ = self.select_stocks(category=category, max_stocks=max_stocks, return_data=True, M_days=M_days, pick_date=pick_date)
         
         # ============== 强制Z哥交易规则过滤 ==============
         print("\n[Z哥过滤] 开始执行Z哥交易规则筛选...")
@@ -626,7 +643,7 @@ class QuantSystem:
         
         # 1. 先执行原有选股逻辑
         print("\n[1/3] 执行策略选股...")
-        results, stock_names, stock_data_dict = self.select_stocks(
+        results, stock_names, stock_data_dict, inline_turnover = self.select_stocks(
             category=category,
             max_stocks=max_stocks,
             return_data=True,
@@ -757,57 +774,36 @@ class QuantSystem:
         all_market_stocks = self.csv_manager.list_all_stocks()
         print(f"  全市场股票数（用于行业热度计算）：{len(all_market_stocks)}")
 
-        # 确保选股日期的成交额数据存在（从全市场股票获取）
+        # 用 select_stocks 顺手提取的内存成交额填充缓存，完全跳过二次读盘
         if heat_calc_date:
-            from datetime import datetime, timedelta
+            MIN_STOCKS = 500
+            # 将 inline_turnover 合并进持久化缓存（只补充缺失日期）
+            for d, d_data in inline_turnover.items():
+                if d not in turnover_cache_manager.cache or len(turnover_cache_manager.cache[d]) < len(d_data):
+                    turnover_cache_manager.cache[d] = d_data
 
-            # 如果缓存中已有该日期的足够数据，直接跳过全量遍历
-            MIN_STOCKS = 200
             existing_today = turnover_cache_manager.cache.get(heat_calc_date, {})
             if len(existing_today) >= MIN_STOCKS:
-                print(f"  ✓ 成交额缓存命中 {heat_calc_date}：{len(existing_today)}只股票，跳过重新计算")
-                date_turnover = existing_today
+                print(f"  ✓ 成交额缓存命中 {heat_calc_date}：{len(existing_today)}只股票")
             else:
-                print(f"\n[行业热度] 获取全市场成交额数据...")
-                print("  从 CSV 计算成交额 (这可能需要几分钟)...")
+                # 内存数据不足时才回退到磁盘读取
+                print(f"  [行业热度] 内存数据不足（{len(existing_today)}只），从 CSV 补充...")
                 date_turnover = self._fetch_date_turnover_from_csv(heat_calc_date, all_market_stocks)
-
                 if date_turnover and len(date_turnover) >= MIN_STOCKS:
                     turnover_cache_manager.cache[heat_calc_date] = date_turnover
-                    print(f"  ✓ 已缓存 {heat_calc_date} 的成交额数据：{len(date_turnover)}只股票")
+                    print(f"  ✓ 已补充 {heat_calc_date} 的成交额数据：{len(date_turnover)}只股票")
                 else:
-                    print(f"  ⚠️ {heat_calc_date} 数据较少（{len(date_turnover) if date_turnover else 0}只），仍将使用该日期计算行业热度")
-                    if not date_turnover:
-                        print(f"  尝试使用缓存中的数据...")
-                        best_date = None
-                        best_count = 0
-                        for d, data in turnover_cache_manager.cache.items():
-                            if len(data) > best_count:
-                                best_count = len(data)
-                                best_date = d
-
-                        if best_date and best_count >= MIN_STOCKS:
-                            heat_calc_date = best_date
-                            print(f"  ✓ 使用缓存中 {heat_calc_date} 的成交额数据：{best_count}只股票")
-                        else:
-                            print(f"  ✗ 缓存中没有足够的数据，无法计算行业热度")
-                            heat_calc_date = None
-
-            # 同时确保前一交易日的数据也在缓存中（用于环比计算）
-            if heat_calc_date:
-                target_date = datetime.strptime(heat_calc_date, '%Y-%m-%d')
-                prev_date = (target_date - timedelta(days=1)).strftime('%Y-%m-%d')
-
-                if prev_date not in turnover_cache_manager.cache:
-                    print(f"  同时获取前一交易日 ({prev_date}) 的成交额数据...")
-                    prev_turnover = self._fetch_date_turnover_from_csv(prev_date, all_market_stocks)
-                    if prev_turnover:
-                        turnover_cache_manager.cache[prev_date] = prev_turnover
-                        print(f"  ✓ 已缓存 {prev_date} 的成交额数据：{len(prev_turnover)}只股票")
+                    # 找缓存中数据最多的日期作为替代
+                    best_date = max(
+                        ((d, len(v)) for d, v in turnover_cache_manager.cache.items() if len(v) >= MIN_STOCKS),
+                        key=lambda x: x[1], default=(None, 0)
+                    )[0]
+                    if best_date:
+                        heat_calc_date = best_date
+                        print(f"  ✓ 使用缓存中 {heat_calc_date} 的数据替代")
                     else:
-                        print(f"  ⚠️ 未能获取 {prev_date} 的成交额数据")
-                else:
-                    print(f"  ✓ 前一日数据已在缓存中：{prev_date}")
+                        print(f"  ✗ 缓存中没有足够的数据，无法计算行业热度")
+                        heat_calc_date = None
 
             # 统一保存
             turnover_cache_manager.save()
