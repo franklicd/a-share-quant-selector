@@ -649,9 +649,17 @@ class IndustryHeatCalculator:
             self.fetcher = IndustryFetcher()
         else:
             self.fetcher = industry_fetcher
-        # 每日分位数缓存：{date: (market_turnover, {ind: ratio}, sorted_ratios)}
-        # 同一天多次调用时，全市场行业占比只计算一次
+        # 每日分位数缓存：{date: (market_total, {ind: ratio}, sorted_ratios)}
         self._daily_ratios_cache = {}
+        # 排好序的交易日列表缓存（bisect 查找前一交易日，避免重复 strptime）
+        self._sorted_dates_cache = None
+        self._sorted_dates_key = None
+        # numpy 向量化缓存
+        self._stock_list = None          # 全市场股票列表（固定顺序）
+        self._stock_index = None         # {code: int_index}
+        self._ind_indices = {}           # {industry: np.int32 array of indices}
+        self._daily_amounts_cache = {}   # {date: np.float64 array of turnover}
+        self._daily_amounts_key = None   # turnover_cache id，检测失效
 
     def _get_stock_turnover(self, code, date, stock_data_dict):
         """
@@ -771,6 +779,50 @@ class IndustryHeatCalculator:
             'heat': heats
         })
 
+    def _build_numpy_cache(self, turnover_cache, all_market_stocks):
+        """
+        预构建 numpy 向量化所需的索引结构（每个 turnover_cache 实例只建一次）
+        """
+        import numpy as np
+        cache_id = id(turnover_cache)
+        if self._daily_amounts_key == cache_id:
+            return  # 已构建，无需重建
+
+        # 固定股票顺序（优先用 all_market_stocks，否则用行业映射中的全部股票）
+        if all_market_stocks is not None:
+            self._stock_list = list(all_market_stocks)
+        else:
+            self._stock_list = list(self.fetcher.stock_industry_map.keys())
+
+        self._stock_index = {code: i for i, code in enumerate(self._stock_list)}
+
+        # 预计算每个行业的成分股 index array
+        self._ind_indices = {}
+        for ind in self.fetcher.get_all_industries():
+            stocks = self.fetcher.get_stocks_in_industry(ind)
+            if stocks:
+                idx = np.array([self._stock_index[c] for c in stocks if c in self._stock_index], dtype=np.int32)
+                if len(idx) > 0:
+                    self._ind_indices[ind] = idx
+
+        self._daily_amounts_cache = {}
+        self._daily_amounts_key = cache_id
+
+    def _get_amounts_array(self, date, turnover_cache):
+        """
+        获取指定日期的成交额 numpy array（同一天只构建一次）
+        """
+        import numpy as np
+        if date not in self._daily_amounts_cache:
+            dt = turnover_cache.get(date, {})
+            amounts = np.zeros(len(self._stock_list), dtype=np.float64)
+            for code, val in dt.items():
+                idx = self._stock_index.get(code)
+                if idx is not None:
+                    amounts[idx] = val
+            self._daily_amounts_cache[date] = amounts
+        return self._daily_amounts_cache[date]
+
     def calculate_industry_heat_fast(self, industry_name, date, turnover_cache, all_market_stocks=None, stock_data_dict=None):
         """
         【统一标准版本】行业热度计算（全链路唯一标准）
@@ -788,73 +840,66 @@ class IndustryHeatCalculator:
         :param stock_data_dict: 股票数据字典（可选，保留兼容性）
         :return: (heat_score, heat_change_pct) 元组，计算失败返回 (None, None)
         """
-        # 获取行业成分股
-        industry_stocks = self.fetcher.get_stocks_in_industry(industry_name)
-        if not industry_stocks:
-            return None, None
+        import bisect
 
-        # 获取该日期的成交额数据
+        # 样本量校验
         date_turnover = turnover_cache.get(date, {})
-        if not date_turnover:
+        if len(date_turnover) < 500:
             return None, None
 
-        # === 样本量校验 ===
-        MIN_REQUIRED_SAMPLES = 500
-        if len(date_turnover) < MIN_REQUIRED_SAMPLES:
+        # 确保 numpy 索引结构已构建
+        self._build_numpy_cache(turnover_cache, all_market_stocks)
+
+        ind_idx = self._ind_indices.get(industry_name)
+        if ind_idx is None or len(ind_idx) == 0:
             return None, None
 
-        # 1. 计算全市场总成交额
-        if all_market_stocks is None:
-            all_market_stocks = list(date_turnover.keys())
-
-        market_turnover = sum(date_turnover.get(code, 0) for code in all_market_stocks)
-        if market_turnover == 0:
+        # 获取当天成交额 array（缓存复用）
+        amounts = self._get_amounts_array(date, turnover_cache)
+        market_total = amounts.sum()
+        if market_total == 0:
             return None, None
 
-        # 2. 计算目标行业的成交额占比
-        industry_turnover = sum(date_turnover.get(code, 0) for code in industry_stocks if code in date_turnover)
+        industry_turnover = amounts[ind_idx].sum()
         if industry_turnover == 0:
             return None, None
 
-        target_ratio = industry_turnover / market_turnover
+        target_ratio = float(industry_turnover / market_total)
 
-        # 3. 计算所有行业的成交额占比，用于分位数排名（同一天只算一次，缓存复用）
+        # 所有行业占比 + 分位数排名（同一天只算一次）
         if date not in self._daily_ratios_cache:
-            all_industries = self.fetcher.get_all_industries()
             ind_ratios = {}
-            for ind in all_industries:
-                stocks = self.fetcher.get_stocks_in_industry(ind)
-                if not stocks:
-                    continue
-                ind_turnover = sum(date_turnover.get(code, 0) for code in stocks if code in date_turnover)
-                if ind_turnover > 0:
-                    ind_ratios[ind] = ind_turnover / market_turnover
-            self._daily_ratios_cache[date] = (market_turnover, ind_ratios, sorted(ind_ratios.values()))
+            for ind, idx in self._ind_indices.items():
+                t = float(amounts[idx].sum())
+                if t > 0:
+                    ind_ratios[ind] = t / market_total
+            self._daily_ratios_cache[date] = (market_total, ind_ratios, sorted(ind_ratios.values()))
 
         _, ind_ratios, sorted_ratios = self._daily_ratios_cache[date]
-
         if not sorted_ratios:
             return None, None
 
-        # 4. 分位数排名：目标行业占比在所有行业中排第几（0-100分）
-        import bisect
         rank = bisect.bisect_right(sorted_ratios, target_ratio)
         heat_score = round(rank / len(sorted_ratios) * 100, 1)
 
-        # 5. 计算较前一交易日的占比变化百分比
+        # 较前一交易日的占比变化
         heat_change_pct = None
         prev_date = self._find_prev_trade_date(date, turnover_cache)
         if prev_date:
-            prev_turnover = turnover_cache.get(prev_date, {})
-            if prev_turnover:
-                # 复用前一天的缓存（如果有），否则只算目标行业
-                if prev_date in self._daily_ratios_cache:
-                    prev_market_turnover, prev_ind_ratios, _ = self._daily_ratios_cache[prev_date]
-                    prev_ratio = prev_ind_ratios.get(industry_name)
-                else:
-                    prev_market_turnover = sum(prev_turnover.get(code, 0) for code in all_market_stocks)
-                    prev_industry_turnover = sum(prev_turnover.get(code, 0) for code in industry_stocks if code in prev_turnover)
-                    prev_ratio = prev_industry_turnover / prev_market_turnover if prev_market_turnover > 0 and prev_industry_turnover > 0 else None
+            if prev_date not in self._daily_ratios_cache:
+                prev_amounts = self._get_amounts_array(prev_date, turnover_cache)
+                prev_market_total = prev_amounts.sum()
+                if prev_market_total > 0:
+                    prev_ind_ratios = {}
+                    for ind, idx in self._ind_indices.items():
+                        t = float(prev_amounts[idx].sum())
+                        if t > 0:
+                            prev_ind_ratios[ind] = t / prev_market_total
+                    self._daily_ratios_cache[prev_date] = (prev_market_total, prev_ind_ratios, sorted(prev_ind_ratios.values()))
+
+            if prev_date in self._daily_ratios_cache:
+                _, prev_ind_ratios, _ = self._daily_ratios_cache[prev_date]
+                prev_ratio = prev_ind_ratios.get(industry_name)
                 if prev_ratio:
                     heat_change_pct = round((target_ratio - prev_ratio) / prev_ratio * 100, 1)
 
@@ -862,29 +907,26 @@ class IndustryHeatCalculator:
 
     def _find_prev_trade_date(self, date_str, turnover_cache):
         """
-        在缓存中查找给定日期的前一交易日
-        :param date_str: 日期字符串 (YYYY-MM-DD)
-        :param turnover_cache: 成交额缓存
-        :return: 前一交易日日期字符串，找不到返回 None
+        在缓存中查找给定日期的前一交易日（bisect 二分查找，O(log n)）
+        日期字符串 YYYY-MM-DD 格式可直接字符串比较，无需 strptime
         """
-        from datetime import datetime, timedelta
+        import bisect
 
-        # 获取所有已有日期
-        available_dates = sorted(turnover_cache.keys())
+        # 如果 turnover_cache 变了（id 变化），重建排序列表
+        cache_id = id(turnover_cache)
+        if self._sorted_dates_key != cache_id:
+            self._sorted_dates_cache = sorted(turnover_cache.keys())
+            self._sorted_dates_key = cache_id
+
+        available_dates = self._sorted_dates_cache
         if not available_dates:
             return None
 
-        # 找到小于给定日期的最大日期
-        target = datetime.strptime(date_str, '%Y-%m-%d')
-        prev_date = None
-        for d in available_dates:
-            dt = datetime.strptime(d, '%Y-%m-%d')
-            if dt < target:
-                prev_date = d
-            else:
-                break
-
-        return prev_date
+        # YYYY-MM-DD 字符串可直接比较大小，bisect 找到插入位置
+        idx = bisect.bisect_left(available_dates, date_str)
+        if idx == 0:
+            return None
+        return available_dates[idx - 1]
 
 
 # 便捷函数
