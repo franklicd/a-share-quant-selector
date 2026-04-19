@@ -18,7 +18,7 @@ from utils.technical import (
 class PatternFeatureExtractor:
     """从股票数据中提取完美图形特征"""
     
-    def __init__(self, lookback_days=25):
+    def __init__(self, lookback_days=45):
         self.lookback_days = lookback_days
     
     def extract(self, df: pd.DataFrame, lookback_days: int = None) -> dict:

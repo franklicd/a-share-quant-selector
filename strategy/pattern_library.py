@@ -23,7 +23,7 @@ class B1PatternLibrary:
     - 为B2、B3等扩展预留空间
     """
     
-    CACHE_FILE = Path("/root/quant-csv/data/b1_pattern_library_cache.json")
+    CACHE_FILE = Path(__file__).parent.parent / 'data' / 'cache' / 'b1_pattern_library_cache.json'
     
     def __init__(self, csv_manager):
         self.csv_manager = csv_manager
@@ -89,17 +89,17 @@ class B1PatternLibrary:
         mask = df['date'] < breakout_dt
         filtered = df[mask]
         
-        # 取breakout_date之前lookback_days天
-        return filtered.head(lookback_days)
+        # 取breakout_date之前lookback_days天（最近的N天）
+        return filtered.tail(lookback_days)
     
-    def find_best_match(self, stock_code: str, stock_df: pd.DataFrame, lookback_days: int = 25) -> dict:
+    def find_best_match(self, stock_code: str, stock_df: pd.DataFrame, lookback_days: int = 45) -> dict:
         """
         为单只股票找到最匹配的B1完美图形案例
         
         Args:
             stock_code: 股票代码
             stock_df: 股票数据
-            lookback_days: 回看天数，默认25天
+            lookback_days: 回看天数，默认40天
         """
         if not self.cases:
             return {
@@ -148,7 +148,7 @@ class B1PatternLibrary:
             "candidate_features": candidate_features,
         }
     
-    def match_batch(self, stocks_data: list) -> list:
+    def match_batch(self, stocks_data: list, lookback_days: int = 45) -> list:
         """
         批量匹配多只股票
         stocks_data: [{code, df, stock_info}, ...]
@@ -157,7 +157,7 @@ class B1PatternLibrary:
         
         for stock in stocks_data:
             try:
-                match_result = self.find_best_match(stock["code"], stock["df"])
+                match_result = self.find_best_match(stock["code"], stock["df"], lookback_days=lookback_days)
                 
                 if match_result["best_match"]:
                     results.append({
@@ -254,6 +254,9 @@ class B1PatternLibrary:
             
         except Exception as e:
             print(f"⚠️ 缓存加载失败: {e}，将重新构建")
+            # 删除损坏的缓存文件
+            if self.CACHE_FILE.exists():
+                self.CACHE_FILE.unlink()
             return False
     
     def _serialize_features(self, features: dict) -> dict:
@@ -268,7 +271,7 @@ class B1PatternLibrary:
                 serialized[key] = value.tolist()
             elif isinstance(value, (np.integer, np.floating)):
                 serialized[key] = float(value)
-            elif isinstance(value, bool):
+            elif isinstance(value, (np.bool_, bool)):
                 serialized[key] = bool(value)
             elif isinstance(value, str):
                 serialized[key] = value

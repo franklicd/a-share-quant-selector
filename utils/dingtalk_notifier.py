@@ -709,7 +709,21 @@ class DingTalkNotifier:
                     
                     # 紧凑格式
                     content += f"{i}. {code} {name}\n"
-                    content += f"   价格:{close} J:{j_val} 关键K:{key_date}\n\n"
+                    content += f"   价格:{close} J:{j_val} 关键K:{key_date}\n"
+                    
+                    # 添加Z哥交易规则信息
+                    if 'zge_signal' in signal:
+                        zge_signal = signal['zge_signal']
+                        zge_trend = signal.get('zge_trend', '未知')
+                        zge_position = int(signal.get('zge_position_ratio', 0) * 100)
+                        zge_hints = signal.get('zge_hints', [])
+                        
+                        content += f"   📈 Z哥信号: {zge_signal} | {zge_trend} | 建议仓位: {zge_position}%\n"
+                        if zge_hints:
+                            hints_str = " | ".join(zge_hints)
+                            content += f"   💡 提示: {hints_str}\n"
+                    
+                    content += "\n"
                     
                     # 每20只分段发送，避免单条过长
                     if i % 20 == 0 and i < len(group):
@@ -1106,6 +1120,20 @@ class DingTalkNotifier:
             
             cat_name = category_names.get(category, category)
             lines.append(f"   策略: {cat_name} | 价格: {close} | J值: {j_val}")
+            
+            # ============== 新增Z哥交易规则信息 ==============
+            if 'zge_signal' in r:
+                zge_signal = r['zge_signal']
+                zge_trend = r.get('zge_trend', '未知')
+                zge_position = int(r.get('zge_position_ratio', 0) * 100)
+                zge_hints = r.get('zge_hints', [])
+                
+                lines.append(f"   📈 Z哥信号: {zge_signal} | {zge_trend} | 建议仓位: {zge_position}%")
+                if zge_hints:
+                    hints_str = ' | '.join(zge_hints)
+                    lines.append(f"   💡 提示: {hints_str}")
+            # ============== Z哥信息结束 ==============
+            
             lines.append("")  # 空行分隔
         
         # 添加图例说明

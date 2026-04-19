@@ -112,10 +112,10 @@ def industry_heat_analysis(df, label):
             stats['avg_heat'] = df_heat[heat_col].mean()
             stats['median_heat'] = df_heat[heat_col].median()
 
-            # 按热度分组
-            low_heat = df_heat[df_heat[heat_col] < 30]
-            mid_heat = df_heat[(df_heat[heat_col] >= 30) & (df_heat[heat_col] < 70)]
-            high_heat = df_heat[df_heat[heat_col] >= 70]
+            # 按热度分组（全链路统一标准）
+            low_heat = df_heat[df_heat[heat_col] < 15]  # 极低+低热度合并
+            mid_heat = df_heat[(df_heat[heat_col] >= 15) & (df_heat[heat_col] < 30)]  # 中热度
+            high_heat = df_heat[df_heat[heat_col] >= 30]  # 高热度（统一阈值）
 
             stats['low_heat_count'] = len(low_heat)
             stats['mid_heat_count'] = len(mid_heat)

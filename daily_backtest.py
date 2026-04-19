@@ -32,16 +32,18 @@ from strategy.pattern_feature_extractor import PatternFeatureExtractor
 from strategy.pattern_matcher import PatternMatcher
 from strategy.pattern_config import SIMILARITY_WEIGHTS, B1_PERFECT_CASES
 from strategy.bowl_rebound import BowlReboundStrategy
+from strategy.zge_filter import ZgeFilter
 
 
 class DailyBacktestConfig:
     """每日回测配置"""
-    def __init__(self, start_date, end_date, top_n=10, hold_days=30, cap_threshold=4e9):
+    def __init__(self, start_date, end_date, top_n=10, hold_days=30, cap_threshold=4e9, filter_zge_risk=False):
         self.start_date = start_date
         self.end_date = end_date
         self.top_n = top_n
         self.hold_days = hold_days
         self.cap_threshold = cap_threshold
+        self.filter_zge_risk = filter_zge_risk
 
 
 class DailyBacktestStrategy(BowlReboundStrategy):
@@ -84,7 +86,7 @@ class DailyBacktestStrategy(BowlReboundStrategy):
 
         print(f"  ✓ 案例库加载完成：{len(self.cases)} 个案例")
 
-    def rank_stocks_by_similarity(self, stock_data_dict, target_date):
+    def rank_stocks_by_similarity(self, stock_data_dict, target_date, filter_zge_risk=False):
         """使用 B1 图形匹配对股票进行排名"""
         if not self.cases:
             self._build_case_library(self.csv_manager)
@@ -156,7 +158,35 @@ class DailyBacktestStrategy(BowlReboundStrategy):
 
         # 按相似度降序排列
         candidates.sort(key=lambda x: x['similarity_score'], reverse=True)
-
+        
+        # ============== Z哥过滤 ==============
+        zge_filter = ZgeFilter()
+        filtered_candidates = []
+        for cand in candidates:
+            code = cand['code']
+            # 获取股票数据
+            if code not in stock_data_dict:
+                continue
+            name, full_df = stock_data_dict[code]
+            # 截断到target_date，只使用选股日之前的数据，避免未来数据
+            historical_df = full_df[full_df['date'] <= target_pd].copy().reset_index(drop=True)
+            if len(historical_df) < 21: # 风控需要至少21天数据
+                cand['has_risk'] = True
+                cand['zge_hints'] = ["日线数据不足21天"]
+                cand['zge_triggered_rules'] = ["日线数据不足21天"]
+                if not filter_zge_risk:
+                    filtered_candidates.append(cand)
+                continue
+            # 执行过滤
+            _, zge_result = zge_filter.filter_stock(code, historical_df)
+            cand.update(zge_result)
+            # 过滤规则：开启过滤时剔除has_risk=True的股票，关闭时全部保留
+            if not filter_zge_risk or not zge_result['has_risk']:
+                filtered_candidates.append(cand)
+        # 替换结果
+        candidates = filtered_candidates
+        # ============== 过滤结束 ==============
+        
         # 添加排名和分类信息
         for i, cand in enumerate(candidates):
             cand['rank'] = i + 1
@@ -299,7 +329,7 @@ class DailyBacktester:
             print(f"[{idx}/{len(selection_dates)}] 选股日：{sel_date}")
 
             # 选股
-            ranked = self.strategy.rank_stocks_by_similarity(stock_data_dict, sel_date)
+            ranked = self.strategy.rank_stocks_by_similarity(stock_data_dict, sel_date, self.config.filter_zge_risk)
 
             if not ranked:
                 print(f"  ⚠️ 该日期未选出任何股票")
@@ -401,16 +431,18 @@ class DailyBacktester:
         output_dir = Path(__file__).parent / 'backtest_results'
         output_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        suffix = '_zge_filtered' if self.config.filter_zge_risk else ''
 
         # JSON
-        json_file = output_dir / f'daily_backtest_{timestamp}.json'
+        json_file = output_dir / f'daily_backtest_{timestamp}{suffix}.json'
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'config': {
                     'start_date': str(self.config.start_date),
                     'end_date': str(self.config.end_date),
                     'top_n': self.config.top_n,
-                    'hold_days': self.config.hold_days
+                    'hold_days': self.config.hold_days,
+                    'filter_zge_risk': self.config.filter_zge_risk
                 },
                 'summary': {
                     'total_trades': len(all_results),
@@ -422,7 +454,7 @@ class DailyBacktester:
             }, f, ensure_ascii=False, indent=2)
 
         # CSV
-        csv_file = output_dir / f'daily_backtest_{timestamp}.csv'
+        csv_file = output_dir / f'daily_backtest_{timestamp}{suffix}.csv'
         df = pd.DataFrame(all_results)
         df.to_csv(csv_file, index=False)
 
@@ -448,7 +480,7 @@ class DailyBacktester:
                 '持有天数': r['hold_days']
             })
 
-        simple_csv = output_dir / f'daily_backtest_readable_{timestamp}.csv'
+        simple_csv = output_dir / f'daily_backtest_readable_{timestamp}{suffix}.csv'
         df_simple = pd.DataFrame(simple_rows)
         df_simple.to_csv(simple_csv, index=False, encoding='utf-8-sig')
 
@@ -465,6 +497,12 @@ def main():
     parser.add_argument('--top-n', type=int, default=10, help='每次选股数量 (默认：10)')
     parser.add_argument('--hold-days', type=int, default=30, help='持有天数 (默认：30)')
     parser.add_argument('--cap', type=float, default=40, help='市值门槛 (单位：亿，默认：40)')
+    parser.add_argument(
+        '--filter-zge-risk',
+        action='store_true',
+        default=False,
+        help='开启后回测过程中剔除所有触发Z哥风控规则的股票，不参与回测计算，默认关闭所有股票都参与回测'
+    )
 
     args = parser.parse_args()
 
@@ -473,7 +511,8 @@ def main():
         end_date=datetime.strptime(args.end, '%Y-%m-%d').date(),
         top_n=args.top_n,
         hold_days=args.hold_days,
-        cap_threshold=args.cap * 1e8
+        cap_threshold=args.cap * 1e8,
+        filter_zge_risk=args.filter_zge_risk
     )
 
     backtester = DailyBacktester(config)

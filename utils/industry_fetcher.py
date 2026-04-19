@@ -78,10 +78,11 @@ class IndustryFetcher:
             # 缓存未过期，直接加载
             if cache_age_days is not None and cache_age_days < cache_days:
                 try:
-                    with open(cache_file, 'w', encoding='utf-8') as f:
+                    with open(cache_file, 'r', encoding='utf-8') as f:
                         data = json.load(f)
                         self.stock_industry_map = data.get('stock_industry', {})
                         self.industry_stocks_map = data.get('industry_stocks', {})
+
                     # 合并内置映射中独有的股票（扩展覆盖范围）
                     self._merge_builtin_industry_map()
                     # 使用进程 ID 控制打印，避免多进程重复输出
@@ -101,15 +102,32 @@ class IndustryFetcher:
 
         # 从 tushare 获取申万行业数据（优先，2000 积分权限）
         if self._fetch_industry_mapping_from_tushare():
+            # 合并内置映射以补充覆盖范围
+            self._merge_builtin_industry_map()
             self._save_cache(cache_file, cache_meta_file)
             return True
 
         # tushare 失败，从 HTTP 接口获取（东方财富备选）
         if self._fetch_industry_mapping_from_http():
+            # 合并内置映射以补充覆盖范围
+            self._merge_builtin_industry_map()
             self._save_cache(cache_file, cache_meta_file)
             return True
 
-        # 都失败，使用内置映射
+        # 都失败，检查缓存是否已加载（有数据）
+        if self.stock_industry_map and len(self.stock_industry_map) > 1000:
+            # 缓存已加载，保留缓存数据（即使过期），只打印警告
+            import os
+            worker_id = os.environ.get('WORKER_ID', os.getpid())
+            if not hasattr(IndustryFetcher, '_cache_fallback_printed'):
+                IndustryFetcher._cache_fallback_printed = set()
+            if worker_id not in IndustryFetcher._cache_fallback_printed:
+                IndustryFetcher._cache_fallback_printed.add(worker_id)
+                if len(IndustryFetcher._cache_fallback_printed) == 1:
+                    print(f"  ⚠️ 网络不可用，保留缓存行业数据：{len(self.stock_industry_map)} 只股票")
+            return True
+
+        # 缓存也没有，使用内置映射
         self._load_builtin_industry_map()
         return True
 
@@ -724,85 +742,35 @@ class IndustryHeatCalculator:
 
     def calculate_industry_heat(self, industry_name, date, stock_data_dict, all_market_stocks=None):
         """
-        计算行业在指定日期的热度（复合版）
-
-        :param industry_name: 行业名称
-        :param date: 日期 (str 或 datetime.date)
-        :param stock_data_dict: 股票数据字典 {code: (name, df)}
-        :param all_market_stocks: 全市场股票代码列表（可选，用于计算分母）
-        :return: 热度分数 (0-100)，计算失败返回 None
+        【已弃用】统一使用 calculate_industry_heat_fast 方法
+        为了保持兼容性，内部直接调用快速版方法
         """
-        # 获取行业成分股
-        industry_stocks = self.fetcher.get_stocks_in_industry(industry_name)
-
-        if not industry_stocks:
-            return None
-
-        # 1. 计算行业今日总成交额
-        industry_turnover = 0
-        industry_yesterday_turnover = 0
-        valid_count = 0
-        valid_yesterday_count = 0
-
-        for code in industry_stocks:
-            today = self._get_stock_turnover(code, date, stock_data_dict)
-            if today is not None:
-                industry_turnover += today
-                valid_count += 1
-
-            yesterday = self._get_yesterday_turnover(code, date, stock_data_dict)
-            if yesterday is not None:
-                industry_yesterday_turnover += yesterday
-                valid_yesterday_count += 1
-
-        if valid_count == 0 or industry_turnover == 0:
-            return None
-
-        # 2. 计算全市场今日总成交额
-        if all_market_stocks is None:
-            all_market_stocks = list(stock_data_dict.keys())
-
-        market_turnover = 0
-        market_yesterday_turnover = 0
-        market_valid_count = 0
-
-        for code in all_market_stocks:
-            today = self._get_stock_turnover(code, date, stock_data_dict)
-            if today is not None:
-                market_turnover += today
-                market_valid_count += 1
-
-            yesterday = self._get_yesterday_turnover(code, date, stock_data_dict)
-            if yesterday is not None:
-                market_yesterday_turnover += yesterday
-
-        if market_valid_count == 0 or market_turnover == 0:
-            return None
-
-        # 3. 计算成交额占比
-        turnover_ratio = industry_turnover / market_turnover
-
-        # 4. 计算成交额环比
-        if valid_yesterday_count > 0 and industry_yesterday_turnover > 0:
-            turnover_change = (industry_turnover - industry_yesterday_turnover) / industry_yesterday_turnover
-        else:
-            turnover_change = 0
-
-        # 5. 标准化处理
-        # 成交额占比通常 0.01-0.15，转换为 0-100 分数
-        # 占比 10% = 100 分，占比 5% = 50 分
-        ratio_score = turnover_ratio * 1000
-        ratio_score = min(100, max(0, ratio_score))
-
-        # 成交额环比范围 -1.0 到 +2.0，转换为 0-100 分数
-        # 0% = 50 分，+50% = 100 分，-50% = 0 分
-        change_score = 50 + turnover_change * 50
-        change_score = min(100, max(0, change_score))
-
-        # 6. 复合热度分数
-        heat_score = 0.6 * ratio_score + 0.4 * change_score
-
-        return round(heat_score, 2)
+        import warnings
+        warnings.warn("calculate_industry_heat 已弃用，请使用 calculate_industry_heat_fast", DeprecationWarning)
+        
+        # 构建临时缓存格式
+        from datetime import datetime
+        date_str = date.strftime('%Y-%m-%d') if hasattr(date, 'strftime') else str(date)
+        
+        # 转换为快速版需要的缓存格式
+        turnover_cache = {}
+        date_turnover = {}
+        for code, (name, df) in stock_data_dict.items():
+            df = df.copy()
+            df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+            row = df[df['date_str'] == date_str]
+            if not row.empty:
+                if 'amount' in row.columns and pd.notna(row['amount'].iloc[0]) and row['amount'].iloc[0] > 0:
+                    date_turnover[code] = row['amount'].iloc[0]
+                elif 'volume' in row.columns and 'close' in row.columns:
+                    vol = row['volume'].iloc[0]
+                    price = row['close'].iloc[0]
+                    if pd.notna(vol) and pd.notna(price) and vol > 0:
+                        date_turnover[code] = vol * price * 100
+        
+        turnover_cache[date_str] = date_turnover
+        
+        return self.calculate_industry_heat_fast(industry_name, date_str, turnover_cache, all_market_stocks)
 
     def get_industry_heat_series(self, industry_name, start_date, end_date, stock_data_dict):
         """
@@ -824,8 +792,10 @@ class IndustryHeatCalculator:
 
     def calculate_industry_heat_fast(self, industry_name, date, turnover_cache, all_market_stocks=None, stock_data_dict=None):
         """
-        使用预计算的成交额缓存计算行业热度（快速版本）
-
+        【统一标准版本】行业热度计算（全链路唯一标准）
+        计算公式：热度 = 成交额占比分值 * 0.7 + 环比分值 * 0.3
+        分档标准：≥30=高热度、15-30=中热度、5-15=低热度、<5=极低热度
+        
         :param industry_name: 行业名称
         :param date: 日期字符串 (str)
         :param turnover_cache: {date_str: {code: turnover}} 成交额缓存
@@ -844,6 +814,13 @@ class IndustryHeatCalculator:
 
         # 如果指定日期没有数据，返回 None
         if not date_turnover:
+            return None
+
+        # === 样本量校验 ===
+        sample_count = len(date_turnover)
+        MIN_REQUIRED_SAMPLES = 500  # 最少需要500只股票的成交额数据才有效
+        if sample_count < MIN_REQUIRED_SAMPLES:
+            # 样本量不足，不计算热度，避免分数失真
             return None
 
         # 1. 计算行业今日总成交额
@@ -892,20 +869,22 @@ class IndustryHeatCalculator:
                     has_change_data = True
 
         # 5. 标准化处理
-        # 成交额占比通常 0.01-0.15，转换为 0-100 分数
+        # 成交额占比：× 1000 转换为分数（3%占比 = 30分，正好对应高热度阈值）
         ratio_score = turnover_ratio * 1000
-        ratio_score = min(100, max(0, ratio_score))
+        ratio_score = min(100, max(0, ratio_score))  # 限制在0-100
 
-        # 成交额环比范围 -1.0 到 +2.0，转换为 0-100 分数
-        # 0% 变化 = 50 分，+100% = 100 分，-100% = 0 分
+        # 成交额环比：变化百分比直接作为分数，范围-100到100
         if has_change_data:
-            change_score = 50 + turnover_change * 50
-            change_score = min(100, max(0, change_score))
+            change_score = turnover_change * 100
+            change_score = min(100, max(-100, change_score))
         else:
-            change_score = 50  # 没有环比数据时取中性值
+            change_score = 0  # 没有环比数据时取中性值
 
-        # 6. 复合热度分数
-        heat_score = 0.6 * ratio_score + 0.4 * change_score
+        # 6. 复合热度分数（官方唯一标准）
+        # 权重：占比70%，环比30%
+        # 负环比会适当扣分，但最多扣到0
+        heat_score = ratio_score * 0.7 + change_score * 0.3
+        heat_score = min(100, max(0, heat_score))
 
         return round(heat_score, 2)
 

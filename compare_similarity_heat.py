@@ -56,9 +56,9 @@ def analyze_by_similarity_heat(df, market_type, stop_profit=10.0, stop_loss=-4.0
             labels=['低相似度 (0-25%)', '中低相似度 (25-50%)', '中高相似度 (50-75%)', '高相似度 (75-100%)']
         )
 
-    # 行业热度分组
-    heat_bins = [0, 30, 50, 70, 100]
-    heat_labels = ['低热度 (0-30)', '中低热度 (30-50)', '中高热度 (50-70)', '高热度 (70-100)']
+    # 行业热度分组（全链路统一标准，和回测/选股完全对齐）
+    heat_bins = [0, 5, 15, 30, 100]
+    heat_labels = ['极低热度(<5)', '低热度(5-15)', '中热度(15-30)', '高热度(≥30)']
     df_valid['热度分组'] = pd.cut(df_valid['行业热度_买入日'], bins=heat_bins, labels=heat_labels)
 
     print(f"\n📈 基本统计")

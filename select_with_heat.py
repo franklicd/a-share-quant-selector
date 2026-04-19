@@ -33,7 +33,7 @@ try:
     from strategy.pattern_config import MIN_SIMILARITY_SCORE, DEFAULT_LOOKBACK_DAYS, TOP_N_RESULTS
 except ImportError:
     MIN_SIMILARITY_SCORE = 60.0
-    DEFAULT_LOOKBACK_DAYS = 25
+    DEFAULT_LOOKBACK_DAYS = 45
     TOP_N_RESULTS = 10
 
 

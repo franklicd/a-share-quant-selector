@@ -82,13 +82,55 @@ DEFAULT_STOCK_LIST = {
 }
 
 
+class TushareRateLimiter:
+    """tushare API 限流器（200次/分钟）"""
+
+    _instance = None
+    _call_times = []  # 记录调用时间戳
+    MAX_CALLS_PER_MINUTE = 200
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def wait_if_needed(self):
+        """如果接近限制，等待"""
+        import time
+        now = time.time()
+
+        # 清理超过1分钟的记录
+        self._call_times = [t for t in self._call_times if now - t < 60]
+
+        # 如果已达限制，等待
+        if len(self._call_times) >= self.MAX_CALLS_PER_MINUTE:
+            wait_time = 60 - (now - self._call_times[0]) + 0.1
+            print(f"  ⏳ tushare 限流中，等待 {wait_time:.1f} 秒...")
+            time.sleep(wait_time)
+            self._call_times = []
+
+        self._call_times.append(now)
+
+
 class AKShareFetcher:
     """AKShare 数据抓取器"""
-    
+
+    # 共享限流器实例
+    _rate_limiter = None
+
     def __init__(self, data_dir="data"):
         self.csv_manager = CSVManager(data_dir)
         self.full_data_dir = Path(data_dir)
         self.stock_names_file = Path(data_dir) / 'stock_names.json'
+
+        # 初始化限流器
+        if AKShareFetcher._rate_limiter is None:
+            AKShareFetcher._rate_limiter = TushareRateLimiter()
+
+    def _call_tushare(self, func, *args, **kwargs):
+        """封装 tushare 调用，自动限流"""
+        self._rate_limiter.wait_if_needed()
+        return func(*args, **kwargs)
     
     def _load_local_stock_names(self):
         """从本地文件加载股票名称"""
@@ -186,6 +228,7 @@ class AKShareFetcher:
             from datetime import datetime
             trade_date = datetime.now().strftime("%Y%m%d")
             print(f"  请求 tushare daily_basic 接口，trade_date={trade_date}...")
+            self._rate_limiter.wait_if_needed()
             df = pro.daily_basic(trade_date=trade_date, fields=['ts_code', 'trade_date', 'total_mv'])
 
             if df is not None and not df.empty:
@@ -309,7 +352,7 @@ class AKShareFetcher:
                                     name = parts[1] if len(parts) > 1 else ''
                                     
                                     # 过滤条件
-                                    exclude_keywords = ['债', '基', 'ETF', 'LOF', '理财', '信托', 'B股', '指数']
+                                    exclude_keywords = ['债', '基', 'ETF', 'LOF', '理财', '信托', 'B股', '指数', '退']
                                     
                                     # 检查是否退市或异常
                                     # 腾讯接口字段：
@@ -381,12 +424,15 @@ class AKShareFetcher:
                     # 过滤
                     filtered = {}
                     code_pattern = r'^(00|30|60|68|88)\d{4}$'
-                    exclude_keywords = ['债', '基', 'ETF', 'LOF', '基金', '理财', '信托', 'B股', '指数', '国债', '企债', '转债', '回购', 'R-', 'GC']
+                    exclude_keywords = ['债', '基', 'ETF', 'LOF', '基金', '理财', '信托', 'B股', '指数', '国债', '企债', '转债', '回购', 'R-', 'GC', '退']
                     
                     for code, name in stocks.items():
                         if not pd.Series([code]).str.match(code_pattern).iloc[0]:
                             continue
                         if any(kw in name for kw in exclude_keywords):
+                            continue
+                        # 过滤退市股票
+                        if '退' in name:
                             continue
                         filtered[code] = name
                     
@@ -412,7 +458,7 @@ class AKShareFetcher:
                 code_pattern = r'^(00|30|60|68|88)\d{4}$'
                 all_stocks = all_stocks[all_stocks['代码'].str.match(code_pattern)]
                 
-                exclude_keywords = ['债', '基', 'ETF', 'LOF', '基金', '理财', '信托', 'B股', '指数', '国债', '企债', '转债', '回购', 'R-', 'GC']
+                exclude_keywords = ['债', '基', 'ETF', 'LOF', '基金', '理财', '信托', 'B股', '指数', '国债', '企债', '转债', '回购', 'R-', 'GC', '退']
                 for keyword in exclude_keywords:
                     all_stocks = all_stocks[~all_stocks['名称'].str.contains(keyword, na=False)]
                 
@@ -648,6 +694,7 @@ class AKShareFetcher:
                 else:
                     ts_code = f"{stock_code}.SZ"
 
+                self._rate_limiter.wait_if_needed()
                 df = pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
 
                 if df is not None and not df.empty:
@@ -829,7 +876,8 @@ class AKShareFetcher:
             # 计算日期范围
             end_date = datetime.now().strftime("%Y%m%d")
             start_date = (datetime.now() - timedelta(days=days + 2)).strftime("%Y%m%d")
-            
+
+            self._rate_limiter.wait_if_needed()
             df = pro.daily(
                 ts_code=ts_code,
                 start_date=start_date,
@@ -966,11 +1014,14 @@ class AKShareFetcher:
         if failed_list and not max_stocks:
             print(f"提示: 再次运行 init 命令可跳过失败股票，专注于成功获取的数据")
     
-    def daily_update(self, max_stocks=None):
+    def daily_update(self, max_stocks=None, force_update=False):
         """
         每日增量更新 - 只获取实际需要的天数
         优化：使用快速缓存机制，避免重复读取已更新的股票
         修复：盘中执行时不会将盘中数据误存为收盘数据
+        
+        :param max_stocks: 限制更新的股票数量（用于测试）
+        :param force_update: 强制更新，跳过缓存检查
         """
         from datetime import datetime
         
@@ -1000,10 +1051,10 @@ class AKShareFetcher:
         market_close_time = datetime.strptime("15:00", "%H:%M").time()
         is_after_market_close = current_time >= market_close_time
         
-        if not is_after_market_close and not max_stocks:
+        if not is_after_market_close and not max_stocks and not force_update:
             print(f"⚠️ 当前时间 {current_time.strftime('%H:%M')}，尚未收盘 (15:00)")
             print("  盘中数据不是收盘价，建议收盘后再执行 update")
-            print("  如需强制更新，请使用 --max-stocks 参数")
+            print("  如需强制更新，请使用 --force 参数")
             print("=" * 60)
             return
         
@@ -1017,12 +1068,15 @@ class AKShareFetcher:
             except:
                 update_cache = {}
         
-        # 如果今天已经更新过（且已收盘），直接跳过
+        # 如果今天已经更新过（且已收盘），直接跳过（force_update 时除外）
         cache_date = update_cache.get('last_update_date')
-        if cache_date == today_str and not max_stocks:
+        if cache_date == today_str and not max_stocks and not force_update:
             print(f"✓ 数据已于 {cache_date} 收盘后更新过，无需重复更新")
             print("=" * 60)
             return
+        
+        if force_update:
+            print("  --force 参数已设置，强制从网络拉取最新数据")
         
         # 预筛选：快速检查哪些股票需要更新（只读取第一行）
         stocks_to_update = []

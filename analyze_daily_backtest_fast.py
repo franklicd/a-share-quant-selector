@@ -450,16 +450,19 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
     if has_trigger_data:
         # 计算各触发条件的数量（修复：使用 pd.notna() 而非 != '' 来判断）
         trigger_10pct_count = df['触发 +10% 日期'].notna().sum()
+        trigger_5pct_count = df['触发 +5% 日期'].notna().sum()
         trigger_neg2pct_count = df['触发 -2% 日期'].notna().sum()
         trigger_neg4pct_count = df['触发 -4% 日期'].notna().sum()
 
         total = len(df)
         trigger_10pct_pct = trigger_10pct_count / total * 100
+        trigger_5pct_pct = trigger_5pct_count / total * 100
         trigger_neg2pct_pct = trigger_neg2pct_count / total * 100
         trigger_neg4pct_pct = trigger_neg4pct_count / total * 100
 
         report += f"""| 触发条件 | 触发数量 | 占总样本比 |
 |----------|----------|------|
+| 达到 +5% 涨幅 | {trigger_5pct_count} | {trigger_5pct_pct:.1f}% |
 | 达到 +10% 涨幅 | {trigger_10pct_count} | {trigger_10pct_pct:.1f}% |
 | 达到 -2% 跌幅 | {trigger_neg2pct_count} | {trigger_neg2pct_pct:.1f}% |
 | 达到 -4% 跌幅 | {trigger_neg4pct_count} | {trigger_neg4pct_pct:.1f}% |
@@ -494,11 +497,16 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
         # 先达到 -2% 后来又达到 +10%
         neg2_then_10pct = 0
         neg4_then_10pct = 0
+        neg2_then_5pct = 0  # 先达到 -2% 后来又达到 +5%
+        neg4_then_5pct = 0  # 先达到 -4% 后来又达到 +5%
         direct_10pct = 0  # 直接涨到 10%，没有先跌到 -2%（可能跌过 -1.5% 但没触发 -2%）
+        direct_5pct = 0   # 直接涨到 5%，没有先跌到 -2%
         clean_10pct = 0  # 从未跌破成本价（0%）就直接涨到 10%（全身而退）
+        clean_5pct = 0   # 从未跌破成本价（0%）就直接涨到 5%
 
         for idx, row in df.iterrows():
             reached_10pct = pd.notna(row['触发 +10% 日期'])
+            reached_5pct = pd.notna(row['触发 +5% 日期'])
             reached_neg2 = pd.notna(row['触发 -2% 日期'])
             reached_neg4 = pd.notna(row['触发 -4% 日期'])
 
@@ -530,19 +538,55 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
                     # 没有触发顺序但有 +10%，说明是直接涨到 10%
                     direct_10pct += 1
 
+            if reached_5pct:
+                # 统计从未跌破成本价就直接涨到 5% 的
+                if has_ever_below_zero and row['是否曾跌破成本价'] == '否':
+                    clean_5pct += 1
+
+                if row['触发顺序'] and row['触发顺序'] != '':
+                    order = row['触发顺序']
+                    # 检查是否包含 neg2pct 和 5pct，且 neg2pct 在 5pct 之前
+                    if 'neg2pct' in order and '5pct' in order:
+                        neg2_idx = order.index('neg2pct')
+                        pct5_idx = order.index('5pct')
+                        if neg2_idx < pct5_idx:
+                            neg2_then_5pct += 1
+
+                    # 检查是否包含 neg4pct 和 5pct，且 neg4pct 在 5pct 之前
+                    if 'neg4pct' in order and '5pct' in order:
+                        neg4_idx = order.index('neg4pct')
+                        pct5_idx = order.index('5pct')
+                        if neg4_idx < pct5_idx:
+                            neg4_then_5pct += 1
+
+                    # 检查是否是直接涨到 5%（5pct 是第一个触发的事件）
+                    if order.startswith('5pct'):
+                        direct_5pct += 1
+                else:
+                    # 没有触发顺序但有 +5%，说明是直接涨到 5%
+                    direct_5pct += 1
+
         neg2_then_10pct_pct = neg2_then_10pct / len(df) * 100
         neg4_then_10pct_pct = neg4_then_10pct / len(df) * 100
+        neg2_then_5pct_pct = neg2_then_5pct / len(df) * 100
+        neg4_then_5pct_pct = neg4_then_5pct / len(df) * 100
         direct_10pct_pct = direct_10pct / len(df) * 100
+        direct_5pct_pct = direct_5pct / len(df) * 100
         clean_10pct_pct = clean_10pct / len(df) * 100
+        clean_5pct_pct = clean_5pct / len(df) * 100
 
         report += f"""
 **路径分析**（先跌后涨）:
 
 | 路径 | 数量 | 占比 |
 |------|------|------|
+| 先达到 -2% 后达到 +5% | {neg2_then_5pct} | {neg2_then_5pct_pct:.1f}% |
+| 先达到 -4% 后达到 +5% | {neg4_then_5pct} | {neg4_then_5pct_pct:.1f}% |
 | 先达到 -2% 后达到 +10% | {neg2_then_10pct} | {neg2_then_10pct_pct:.1f}% |
 | 先达到 -4% 后达到 +10% | {neg4_then_10pct} | {neg4_then_10pct_pct:.1f}% |
+| 直接涨到 +5%（未先触发 -2%） | {direct_5pct} | {direct_5pct_pct:.1f}% |
 | 直接涨到 +10%（未先触发 -2%） | {direct_10pct} | {direct_10pct_pct:.1f}% |
+| 从未跌破成本价直接涨到 +5%（全身而退） | {clean_5pct} | {clean_5pct_pct:.1f}% |
 | 从未跌破成本价直接涨到 +10%（全身而退） | {clean_10pct} | {clean_10pct_pct:.1f}% |
 
 """
@@ -592,6 +636,52 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
                 report += "*无达到 +10% 涨幅的样本*\n\n"
         else:
             report += "*本回测数据不包含达到 +10% 天数信息*\n\n"
+
+        # 达到 +5% 的天数分析
+        report += """
+### 8.2.5 达到 +5% 天数分析
+
+"""
+        if has_5pct_day:
+            df_5pct = df[df['达到 +5% 天数'].notna()]
+            if len(df_5pct) > 0:
+                median_5pct_day = int(df_5pct['达到 +5% 天数'].median())
+                mean_5pct_day = df_5pct['达到 +5% 天数'].mean()
+                min_5pct_day = int(df_5pct['达到 +5% 天数'].min())
+                max_5pct_day = int(df_5pct['达到 +5% 天数'].max())
+
+                # 天数区间分布
+                day_bins = pd.cut(df_5pct['达到 +5% 天数'],
+                                  bins=[0, 3, 5, 7, 10, 15, 20, float('inf')],
+                                  labels=['1-3 天', '4-5 天', '6-7 天', '8-10 天', '11-15 天', '16-20 天', '20 天以上'])
+                day_dist = day_bins.value_counts().sort_index()
+
+                report += f"""| 统计项 | 数值 |
+|--------|------|
+| 样本数 | {len(df_5pct)} 只 |
+| 中位数 | **{median_5pct_day} 天** |
+| 平均数 | **{mean_5pct_day:.1f} 天** |
+| 最早 | 第 {min_5pct_day} 天 |
+| 最晚 | 第 {max_5pct_day} 天 |
+
+**达到 +5% 天数区间分布**:
+
+| 天数区间 | 数量 | 占比 |
+|----------|------|------|
+"""
+                for interval, count in day_dist.items():
+                    pct = count / len(df_5pct) * 100
+                    report += f"| {interval} | {count} | {pct:.1f}% |\n"
+
+                report += f"""
+**结论**:
+- 达到 +5% 涨幅的股票中，中位时间为 **{median_5pct_day} 天**
+- {clean_5pct_pct:.1f}% 的股票能在从未跌破成本价的情况下全身而退（直接涨到 +5%）
+"""
+            else:
+                report += "*无达到 +5% 涨幅的样本*\n\n"
+        else:
+            report += "*本回测数据不包含达到 +5% 天数信息*\n\n"
 
         # 按相似度区间分析路径分布（更有意义的指标）
         report += """
@@ -682,11 +772,11 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
                         duplicates='drop'
                     )
                 except ValueError:
-                    # 如果分位数分组失败，使用等宽分组
+                    # 如果分位数分组失败，使用统一固定阈值分组（和选股/回测标准完全对齐）
                     df_valid['热度分组'] = pd.cut(
                         df_valid['行业热度_买入日'],
-                        bins=4,
-                        labels=['低热度', '中低热度', '中高热度', '高热度']
+                        bins=[0,5,15,30,100],
+                        labels=['极低热度(<5)', '低热度(5-15)', '中热度(15-30)', '高热度(≥30)']
                     )
 
                 heat_vs_return = df_valid.groupby('热度分组', observed=True).agg({
@@ -1187,10 +1277,34 @@ def analyze_and_generate_report(csv_file=None, json_file=None, output_file=None)
 *数据文件：{csv_file.name}*
 """
 
-    if output_file is None:
-        output_file = results_dir / f"B1 每日回测分析报告_持有{hold_days}日_{start_date}_{end_date}.md"
+    # 从CSV文件名中提取回看天数信息
+    import re
+    filename_parts = csv_file.name.split('_')
+    extracted_lookback_days = 'unknown'
+    for i, part in enumerate(filename_parts):
+        if part == 'lb' and i + 1 < len(filename_parts):
+            # 提取紧跟在 'lb' 后面的数字部分
+            next_part = filename_parts[i + 1]
+            # 查找数字部分
+            match = re.search(r'(\d+)', next_part)
+            if match:
+                extracted_lookback_days = match.group(1)
+                break
+
+    # 从配置中获取其他重要参数
+    # 注意：这些参数来自回测运行时的配置，不是策略参数yaml文件
+    top_n = config.get('top_n', 'unknown')
+
+    # 使用从配置中获取的lookback_days（如果不存在则使用从文件名提取的）
+    config_lookback_days = config.get('lookback_days', 'unknown')
+    final_lookback_days = config_lookback_days if config_lookback_days != 'unknown' else extracted_lookback_days
+
+    # 构建更详细的报告名称
+    if final_lookback_days != 'unknown':
+        output_file = results_dir / f"B1每日回测分析报告_LB{final_lookback_days}_选{top_n}股_持{hold_days}日_{start_date}_{end_date}.md"
     else:
-        output_file = Path(output_file)
+        output_file = results_dir / f"B1每日回测分析报告_选{top_n}股_持{hold_days}日_{start_date}_{end_date}.md"
+    output_file = Path(output_file)
 
     with open(output_file, 'w', encoding='utf-8') as f:
         f.write(report)

@@ -58,3 +58,14 @@ htmlcov/
 
 # One-off scripts (not part of main workflow)
 fix_market_cap.py
+
+# Backtest results (generated output, should not be committed)
+backtest_results/
+
+# Local config files
+.claude/settings.local.json
+.claude/scheduled_tasks.json
+
+# Run logs
+run.log
+nohup.out

@@ -36,21 +36,26 @@ from strategy.pattern_feature_extractor import PatternFeatureExtractor
 from strategy.pattern_matcher import PatternMatcher
 from strategy.pattern_config import SIMILARITY_WEIGHTS, B1_PERFECT_CASES
 from strategy.bowl_rebound import BowlReboundStrategy
+from strategy.zge_filter import ZgeFilter
 
 
 # 构建案例查找表：case_id -> 案例信息
 CASE_INFO = {case["id"]: case for case in B1_PERFECT_CASES}
 
 
-def _process_single_day(args):
+def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days, preloaded_data):
     """
     处理单个交易日的选股和收益计算（用于多进程并行）
 
-    :param args: 元组 (sel_date, stock_data_list, config_dict, top_n, hold_days, preloaded_data)
+    :param sel_date: 选股日期
+    :param stock_data_list: 序列化后的股票数据列表
+    :param config_dict: 配置字典
+    :param top_n: 选股Top N
+    :param hold_days: 持有天数
+    :param preloaded_data: 预加载数据
     :return: (day_results, day_summary)
     """
     import io
-    sel_date, stock_data_list, config_dict, top_n, hold_days, preloaded_data = args
 
     # 使用主进程预加载的数据（避免重复加载）
     strategy = FastDailyBacktestStrategy()
@@ -74,7 +79,7 @@ def _process_single_day(args):
         stock_data_dict[code] = (name, df)
 
     # 选股
-    ranked = strategy.rank_stocks_single_date(stock_data_dict, sel_date)
+    ranked = strategy.rank_stocks_single_date(stock_data_dict, sel_date, lookback_days=config_dict.get('lookback_days', 25), filter_zge_risk=config_dict.get('filter_zge_risk', False))
 
     if not ranked:
         return ([], None)
@@ -118,8 +123,8 @@ def _process_single_day(args):
             sell_df = df[df['date'] >= pd.to_datetime(sell_date)]
             if sell_df.empty:
                 continue
-            sell_price = sell_df['close'].iloc[-1]
-            actual_sell_date = sell_df['date'].iloc[-1].date()
+            sell_price = sell_df['close'].iloc[0]
+            actual_sell_date = sell_df['date'].iloc[0].date()
         else:
             sell_price = sell_rows['close'].iloc[0]
             actual_sell_date = sell_date
@@ -215,49 +220,39 @@ def _process_single_day(args):
         def date_to_str(d):
             if isinstance(d, str):
                 return d
-            return d.strftime('%Y-%m-%d')
+            if isinstance(d, pd.Timestamp):
+                return d.strftime('%Y-%m-%d')
+            if hasattr(d, 'strftime'):
+                return d.strftime('%Y-%m-%d')
+            return str(d)
 
-        # 从缓存获取买入日的行业热度
-        industry_heat_buy = None
-        if industry:
-            date_str = date_to_str(actual_date)
+        # 提取行业热度获取逻辑为内联函数（消除重复代码）
+        def _get_heat(industry, date, industry_heats_cache, preloaded_data, stock_keys):
+            if not industry or not date:
+                return None
+            date_str = date_to_str(date)
+            # 优先从预计算缓存获取
             if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_buy = industry_heats_cache[industry][date_str]
+                return industry_heats_cache[industry][date_str]
+            # 尝试从 turnover_cache 实时计算
+            try:
+                turnover_cache = preloaded_data.get('turnover_cache', {})
+                if turnover_cache and date_str in turnover_cache:
+                    heat_calc = IndustryHeatCalculator(industry_fetcher)
+                    return heat_calc.calculate_industry_heat_fast(
+                        industry, date_str, turnover_cache, stock_keys)
+            except:
+                pass
+            return None
 
-        # 达到 +10% 日的行业热度
-        industry_heat_10pct = None
-        if trigger_10pct_date and industry:
-            date_str = date_to_str(trigger_10pct_date)
-            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_10pct = industry_heats_cache[industry][date_str]
-
-        # 达到 +5% 日的行业热度（新增）
-        industry_heat_5pct = None
-        if trigger_5pct_date and industry:
-            date_str = date_to_str(trigger_5pct_date)
-            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_5pct = industry_heats_cache[industry][date_str]
-
-        # 达到 -2% 日的行业热度
-        industry_heat_neg2pct = None
-        if trigger_neg2pct_date and industry:
-            date_str = date_to_str(trigger_neg2pct_date)
-            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_neg2pct = industry_heats_cache[industry][date_str]
-
-        # 达到 -4% 日的行业热度
-        industry_heat_neg4pct = None
-        if trigger_neg4pct_date and industry:
-            date_str = date_to_str(trigger_neg4pct_date)
-            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_neg4pct = industry_heats_cache[industry][date_str]
-
-        # 卖出日的行业热度
-        industry_heat_sell = None
-        if actual_sell_date and industry:
-            date_str = date_to_str(actual_sell_date)
-            if industry in industry_heats_cache and date_str in industry_heats_cache[industry]:
-                industry_heat_sell = industry_heats_cache[industry][date_str]
+        # 获取各关键日期的行业热度
+        stock_keys = list(stock_data_dict.keys())
+        industry_heat_buy = _get_heat(industry, actual_buy_date, industry_heats_cache, preloaded_data, stock_keys)
+        industry_heat_10pct = _get_heat(industry, trigger_10pct_date, industry_heats_cache, preloaded_data, stock_keys)
+        industry_heat_5pct = _get_heat(industry, trigger_5pct_date, industry_heats_cache, preloaded_data, stock_keys)
+        industry_heat_neg2pct = _get_heat(industry, trigger_neg2pct_date, industry_heats_cache, preloaded_data, stock_keys)
+        industry_heat_neg4pct = _get_heat(industry, trigger_neg4pct_date, industry_heats_cache, preloaded_data, stock_keys)
+        industry_heat_sell = _get_heat(industry, actual_sell_date, industry_heats_cache, preloaded_data, stock_keys)
 
         day_results.append({
             'selection_date': str(sel_date),
@@ -314,12 +309,14 @@ def _process_single_day(args):
 
 class FastDailyBacktestConfig:
     """快速每日回测配置"""
-    def __init__(self, start_date, end_date, top_n=10, hold_days=30, cap_threshold=4e9):
+    def __init__(self, start_date, end_date, top_n=10, hold_days=30, cap_threshold=4e9, lookback_days=45, filter_zge_risk=False):
         self.start_date = start_date
         self.end_date = end_date
         self.top_n = top_n
         self.hold_days = hold_days
         self.cap_threshold = cap_threshold
+        self.lookback_days = lookback_days
+        self.filter_zge_risk = filter_zge_risk
 
 
 class FastDailyBacktestStrategy(BowlReboundStrategy):
@@ -370,13 +367,15 @@ class FastDailyBacktestStrategy(BowlReboundStrategy):
             if len(FastDailyBacktestStrategy._case_lib_printed) == 1:
                 print(f"  ✓ 案例库加载完成：{len(self.cases)} 个案例")
 
-    def rank_stocks_single_date(self, stock_data_dict, target_date, precomputed_indicators=None):
+    def rank_stocks_single_date(self, stock_data_dict, target_date, precomputed_indicators=None, lookback_days=45, filter_zge_risk=False):
         """
         对单日进行选股排名
 
         :param stock_data_dict: 股票数据字典 {code: (name, df)}
         :param target_date: 选股日期
         :param precomputed_indicators: 预计算的指标字典（可选）
+        :param lookback_days: 回看天数
+        :param filter_zge_risk: 是否过滤Z哥风控规则触发的股票
         """
         if not self.cases:
             self._build_case_library(self.csv_manager)
@@ -399,8 +398,8 @@ class FastDailyBacktestStrategy(BowlReboundStrategy):
             if pd.isna(actual_date):
                 continue
 
-            # 获取最近 25 天数据（倒序，最新在前）
-            candidate_df = historical_df.head(25).reset_index(drop=True)
+            # 获取最近 lookback_days 天数据（倒序，最新在前）
+            candidate_df = historical_df.head(lookback_days).reset_index(drop=True)
 
             if len(candidate_df) < 10:
                 continue
@@ -452,6 +451,34 @@ class FastDailyBacktestStrategy(BowlReboundStrategy):
 
         # 按相似度降序排列
         candidates.sort(key=lambda x: x['similarity_score'], reverse=True)
+
+        # ============== Z哥过滤 ==============
+        zge_filter = ZgeFilter()
+        filtered_candidates = []
+        for cand in candidates:
+            code = cand['code']
+            # 获取股票数据
+            if code not in stock_data_dict:
+                continue
+            name, full_df = stock_data_dict[code]
+            # 截断到target_date，只使用选股日之前的数据，避免未来数据
+            historical_df = full_df[full_df['date'] <= target_pd].copy().reset_index(drop=True)
+            if len(historical_df) < 21: # 风控需要至少21天数据
+                cand['has_risk'] = True
+                cand['zge_hints'] = ["日线数据不足21天"]
+                cand['zge_triggered_rules'] = ["日线数据不足21天"]
+                if not filter_zge_risk:
+                    filtered_candidates.append(cand)
+                continue
+            # 执行过滤
+            _, zge_result = zge_filter.filter_stock(code, historical_df)
+            cand.update(zge_result)
+            # 过滤规则：开启过滤时剔除has_risk=True的股票，关闭时全部保留
+            if not filter_zge_risk or not zge_result['has_risk']:
+                filtered_candidates.append(cand)
+        # 替换结果
+        candidates = filtered_candidates
+        # ============== 过滤结束 ==============
 
         # 添加排名和分类信息
         for i, cand in enumerate(candidates):
@@ -654,16 +681,26 @@ class FastDailyBacktester:
         print("\n预加载所有股票数据到缓存...")
         stock_codes = self._get_all_stock_codes()
         stock_data_dict = {}
+        invalid_count = 0
+        from utils.stock_filter import is_valid_stock
         for i, code in enumerate(stock_codes):
             df = self.csv_manager.read_stock(code)
-            if df is not None and not df.empty:
-                df = df.copy()
-                df['date'] = pd.to_datetime(df['date'])
-                name = self.stock_names.get(code, '未知')
-                stock_data_dict[code] = (name, df)
-            if (i + 1) % 1000 == 0:
+            if df is None or df.empty:
+                invalid_count += 1
+                continue
+            df = df.copy()
+            df['date'] = pd.to_datetime(df['date'])
+            name = self.stock_names.get(code, '未知')
+
+            # 过滤退市/异常股票
+            if not is_valid_stock(name, df):
+                invalid_count += 1
+                continue
+
+            stock_data_dict[code] = (name, df)
+            if (i + 1) % 2000 == 0:
                 print(f"  已缓存 {i + 1}/{len(stock_codes)}...")
-        print(f"✓ 缓存完成，共 {len(stock_data_dict)} 只股票\n")
+        print(f"✓ 缓存完成，共 {len(stock_data_dict)} 只股票，过滤 {invalid_count} 只无效股票\n")
 
         # 在主进程中预加载案例库和行业映射（避免子进程重复加载）
         print("主进程预加载案例库和行业映射...")
@@ -683,7 +720,7 @@ class FastDailyBacktester:
             'cases': cases_data,
             'industry_map': industry_fetcher.stock_industry_map,
             'industry_stocks_map': industry_fetcher.industry_stocks_map,
-            'industry_heats': {}  # 预计算的行业热度缓存
+            'industry_heats': {},  # 预计算的行业热度缓存
         }
 
         # 准备并行处理数据 - 将 DataFrame 转换为可序列化的格式
@@ -698,7 +735,9 @@ class FastDailyBacktester:
         config_dict = {
             'data_path': str(self.csv_manager.data_dir),
             'top_n': self.config.top_n,
-            'hold_days': self.config.hold_days
+            'hold_days': self.config.hold_days,
+            'lookback_days': self.config.lookback_days,
+            'filter_zge_risk': self.config.filter_zge_risk
         }
 
         # 预计算所有行业在所有交易日的热度（在主进程完成，避免子进程重复计算）
@@ -725,7 +764,10 @@ class FastDailyBacktester:
             print(f"  ✓ 所有 {len(trading_dates_str)} 个交易日的成交额数据已在缓存中")
 
         # 获取完整的成交额缓存供行业热度计算使用
-        turnover_cache = turnover_cache_manager.get_cache()
+        turnover_cache = turnover_cache_manager.get_cache() or {}
+
+        # 将turnover_cache添加到preloaded_data中，供子进程使用
+        preloaded_data['turnover_cache'] = turnover_cache
 
         # 为每个行业预计算热度（使用成交额缓存加速）
         industry_cache = IndustryHeatCalculator(industry_fetcher)
@@ -755,7 +797,7 @@ class FastDailyBacktester:
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             # 提交所有任务
             future_to_date = {
-                executor.submit(_process_single_day, task): task[0]
+                executor.submit(_process_single_day, *task): task[0]
                 for task in tasks
             }
 
@@ -784,7 +826,6 @@ class FastDailyBacktester:
         daily_summary.sort(key=lambda x: x['date'])
 
         self._save_results(all_results, daily_summary)
-        return all_results, daily_summary
         return all_results, daily_summary
 
     def _get_all_stock_codes(self):
@@ -828,14 +869,19 @@ class FastDailyBacktester:
         output_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
 
-        json_file = output_dir / f'daily_backtest_fast_{timestamp}.json'
+        # 在文件名中包含回看天数参数和Z哥风控过滤标识
+        lookback_days = getattr(self.config, 'lookback_days', 45)  # 默认值为45
+        zge_suffix = '_zge_filtered' if self.config.filter_zge_risk else ''
+        json_file = output_dir / f'daily_backtest_fast_lb{lookback_days}{zge_suffix}_{timestamp}.json'
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'config': {
                     'start_date': str(self.config.start_date),
                     'end_date': str(self.config.end_date),
                     'top_n': self.config.top_n,
-                    'hold_days': self.config.hold_days
+                    'hold_days': self.config.hold_days,
+                    'lookback_days': self.config.lookback_days,
+                    'filter_zge_risk': self.config.filter_zge_risk
                 },
                 'summary': {
                     'total_trades': len(all_results),
@@ -846,7 +892,7 @@ class FastDailyBacktester:
                 'all_results': all_results
             }, f, ensure_ascii=False, indent=2)
 
-        csv_file = output_dir / f'daily_backtest_fast_{timestamp}.csv'
+        csv_file = output_dir / f'daily_backtest_fast_lb{lookback_days}{zge_suffix}_{timestamp}.csv'
         df = pd.DataFrame(all_results)
         df.to_csv(csv_file, index=False)
 
@@ -892,7 +938,7 @@ class FastDailyBacktester:
                 '行业热度_卖出日': r.get('industry_heat_sell', '')
             })
 
-        simple_csv = output_dir / f'daily_backtest_fast_readable_{timestamp}.csv'
+        simple_csv = output_dir / f'daily_backtest_fast_readable_lb{lookback_days}{zge_suffix}_{timestamp}.csv'
         df_simple = pd.DataFrame(simple_rows)
         df_simple.to_csv(simple_csv, index=False, encoding='utf-8-sig')
 
@@ -900,6 +946,9 @@ class FastDailyBacktester:
         print(f"  - JSON: {json_file}")
         print(f"  - CSV:  {csv_file}")
         print(f"  - 可读 CSV: {simple_csv}")
+
+        # 更新汇总文件，便于不同回看天数的横向对比
+        self._update_summary_file(output_dir, lookback_days, timestamp, json_file, csv_file, simple_csv)
 
         # 自动生成分析报告
         print("\n📊 正在生成分析报告...")
@@ -911,8 +960,52 @@ class FastDailyBacktester:
             )
             if report_path:
                 print(f"  - 分析报告：{report_path}")
+                # 更新汇总文件，包含分析报告路径
+                self._update_summary_file_with_report(output_dir, report_path)
         except Exception as e:
             print(f"  ⚠️ 生成分析报告失败：{e}")
+
+    def _update_summary_file(self, output_dir, lookback_days, timestamp, json_file, csv_file, simple_csv):
+        """更新汇总文件，记录所有回测结果用于横向对比"""
+        import os
+        from pathlib import Path
+
+        summary_file = output_dir / 'backtest_summary.csv'
+
+        # 如果summary文件不存在，则写入表头
+        if not summary_file.exists():
+            with open(summary_file, 'w', encoding='utf-8-sig') as f:
+                f.write('时间戳,回看天数,开始日期,结束日期,TopN,持有天数,市值门槛(亿),JSON文件路径,CSV文件路径,可读CSV文件路径,报告文件路径\n')
+
+        # 计算市值门槛的亿数值
+        cap_threshold_billion = self.config.cap_threshold / 1e8
+
+        # 写入本次回测的信息
+        with open(summary_file, 'a', encoding='utf-8-sig') as f:
+            f.write(f'{timestamp},{lookback_days},{self.config.start_date},{self.config.end_date},{self.config.top_n},{self.config.hold_days},{cap_threshold_billion:.1f},"{json_file.name}","{csv_file.name}","{simple_csv.name}",""\n')
+
+    def _update_summary_file_with_report(self, output_dir, report_path):
+        """更新汇总文件，添加分析报告路径"""
+        import os
+        from pathlib import Path
+        import pandas as pd
+
+        summary_file = output_dir / 'backtest_summary.csv'
+
+        # 读取现有CSV并更新最新的记录
+        if summary_file.exists():
+            df = pd.read_csv(summary_file, encoding='utf-8-sig')
+
+            # 找到最新的记录（最后一行）并更新其报告路径
+            if not df.empty:
+                # 确保 ReportPath 列存在（以防旧的汇总文件没有此列）
+                if '报告文件路径' not in df.columns:
+                    df['报告文件路径'] = ''
+
+                df.iloc[-1, df.columns.get_loc('报告文件路径')] = str(report_path.name)
+
+                # 重新保存文件
+                df.to_csv(summary_file, index=False, encoding='utf-8-sig')
 
 
 def main():
@@ -923,6 +1016,13 @@ def main():
     parser.add_argument('--hold-days', type=int, default=30, help='持有天数 (默认：30)')
     parser.add_argument('--cap', type=float, default=40, help='市值门槛 (单位：亿，默认：40)')
     parser.add_argument('--workers', type=int, default=None, help='并行工作进程数 (默认：CPU 核心数)')
+    parser.add_argument('--lookback-days', type=int, default=40, help='B1完美图形匹配的回看天数 (默认：40)')
+    parser.add_argument(
+        '--filter-zge-risk',
+        action='store_true',
+        default=False,
+        help='开启后回测过程中剔除所有触发Z哥风控规则的股票，不参与回测计算，默认关闭所有股票都参与回测'
+    )
 
     args = parser.parse_args()
 
@@ -931,7 +1031,9 @@ def main():
         end_date=datetime.strptime(args.end, '%Y-%m-%d').date(),
         top_n=args.top_n,
         hold_days=args.hold_days,
-        cap_threshold=args.cap * 1e8
+        cap_threshold=args.cap * 1e8,
+        lookback_days=args.lookback_days,
+        filter_zge_risk=args.filter_zge_risk
     )
 
     backtester = FastDailyBacktester(config)

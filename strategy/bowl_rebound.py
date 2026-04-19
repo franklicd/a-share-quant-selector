@@ -30,6 +30,7 @@
 
 9. 选股信号 = 异动 AND 趋势线在上 AND J值低位 AND (回落碗中 OR 靠近多空线 OR 靠近短期趋势线)
 """
+import json
 import pandas as pd
 import sys
 from pathlib import Path
@@ -328,7 +329,7 @@ class BowlReboundStrategy(BaseStrategy):
             'close': round(latest['close'], 2),
             'J': round(latest['J'], 2),
             'volume_ratio': round(latest['vol_ratio'], 2) if not pd.isna(latest['vol_ratio']) else 1.0,
-            'market_cap': round(latest['market_cap'] / 1e8, 2),
+            'market_cap': round(latest['market_cap'] / 1e8, 2) if 'market_cap' in latest and pd.notna(latest['market_cap']) else 0,
             'short_term_trend': round(latest['short_term_trend'], 2),
             'bull_bear_line': round(latest['bull_bear_line'], 2),
             'reasons': reasons,

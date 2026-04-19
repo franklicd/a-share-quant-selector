@@ -353,7 +353,14 @@ class FeishuNotifier:
                         content += f"{i}. {code} {name}\n"
                         content += f"   💰 价格: {close}  |  J值: {j_val}\n"
                         content += f"   📅 关键K线: {key_date}\n"
-                        content += f"   📝 {reasons}\n\n"
+                        content += f"   📝 {reasons}\n"
+                        # 添加Z哥过滤信息
+                        if signal.get('zge_passed', False):
+                            position_pct = int(signal.get('zge_position_ratio', 0) * 100)
+                            hints = ', '.join(signal.get('zge_hints', []))
+                            content += f"   ✅ Z哥信号: {signal.get('zge_signal', '')} | 建议仓位: {position_pct}% | 提示: {hints}\n\n"
+                        else:
+                            content += f"   ❌ Z哥剔除理由: {signal.get('zge_reason', '未知原因')}\n\n"
                     
                     content += "\n"
             

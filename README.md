@@ -201,7 +201,7 @@ EMA(EMA(CLOSE, 10), 10)
 
 编辑 `config/strategy_params.yaml` 中的 `B1PatternMatch` 部分可调整：
 - `min_similarity` - 默认最小相似度阈值（默认60）
-- `lookback_days` - 默认回看天数（默认25）
+- `lookback_days` - 默认回看天数（默认45）
 - `weights` - 四维相似度权重分配
 - `tolerances` - 各项特征的匹配容差
 
@@ -235,7 +235,7 @@ BowlReboundStrategy:
 # B1完美图形匹配
 B1PatternMatch:
   min_similarity: 60      # 最小相似度阈值（只显示>=此值的股票）
-  lookback_days: 25       # 回看天数（匹配时使用的数据天数）
+  lookback_days: 40       # 回看天数（匹配时使用的数据天数）
   top_n_results: 15       # 展示Top N个匹配结果（钉钉通知中显示的数量）
   weights:                # 四维相似度权重
     trend_structure: 0.30 # 双线结构

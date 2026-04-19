@@ -15,7 +15,9 @@ from pathlib import Path
 
 def _load_yaml_config():
     """从YAML配置文件加载B1PatternMatch配置"""
-    config_path = Path("/root/quant-csv/config/strategy_params.yaml")
+    # 获取项目根目录
+    project_root = Path(__file__).parent.parent
+    config_path = project_root / "config" / "strategy_params.yaml"
     
     if not config_path.exists():
         return {}
@@ -32,7 +34,7 @@ def _load_yaml_config():
 # 加载YAML配置
 _yaml_config = _load_yaml_config()
 
-# B1完美图形案例配置（10个历史成功案例）
+# B1完美图形案例配置（11个历史成功案例）
 # 注：日期为"选股系统选出的买入日期"，不是突破日
 B1_PERFECT_CASES = [
     {
@@ -72,7 +74,7 @@ B1_PERFECT_CASES = [
         "description": "靠近多空线+量能平稳+J值中位",
     },
     {
-        "id": "case_006",
+        "id": "case_005",
         "name": "国轩高科",
         "code": "002074",
         "breakout_date": "2025-08-04",
@@ -81,7 +83,7 @@ B1_PERFECT_CASES = [
         "description": "靠近短期趋势线+量能平稳+J值低位",
     },
     {
-        "id": "case_007",
+        "id": "case_006",
         "name": "野马电池",
         "code": "605378",
         "breakout_date": "2025-08-01",
@@ -90,7 +92,7 @@ B1_PERFECT_CASES = [
         "description": "持续缩量+J值深度低位+趋势下行",
     },
     {
-        "id": "case_008",
+        "id": "case_007",
         "name": "光电股份",
         "code": "600184",
         "breakout_date": "2025-07-10",
@@ -99,7 +101,7 @@ B1_PERFECT_CASES = [
         "description": "缩量后放量+J值低位+趋势上行",
     },
     {
-        "id": "case_009",
+        "id": "case_008",
         "name": "新瀚新材",
         "code": "301076",
         "breakout_date": "2025-08-01",
@@ -108,7 +110,7 @@ B1_PERFECT_CASES = [
         "description": "缩量后放量+价格接近短期趋势线+J值中位",
     },
     {
-        "id": "case_010",
+        "id": "case_009",
         "name": "昂利康",
         "code": "002940",
         "breakout_date": "2025-07-11",
@@ -117,7 +119,7 @@ B1_PERFECT_CASES = [
         "description": "价格接近短期趋势线+缩量+顶部未放量",
     },
     {
-        "id": "case_011",
+        "id": "case_010",
         "name": "航天发展",
         "code": "000547",
         "breakout_date": "2025-11-12",
@@ -139,8 +141,8 @@ SIMILARITY_WEIGHTS = _yaml_config.get('weights', _default_weights)
 # 匹配阈值（低于此值不显示）
 MIN_SIMILARITY_SCORE = _yaml_config.get('min_similarity', 60.0)
 
-# 回看天数（默认25天）
-DEFAULT_LOOKBACK_DAYS = _yaml_config.get('lookback_days', 25)
+# 回看天数（默认45天）
+DEFAULT_LOOKBACK_DAYS = _yaml_config.get('lookback_days', 45)
 
 # Top N 结果展示（优先从YAML读取）
 TOP_N_RESULTS = _yaml_config.get('top_n_results', 15)
