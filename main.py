@@ -213,16 +213,6 @@ class QuantSystem:
             print("  使用本地已有数据，跳过网络更新")
             return
 
-        # 获取最近的交易日（从本地数据推断，避免周末/节假日误判）
-        latest_trading_date = self._get_latest_trading_date()
-        if latest_trading_date:
-            latest_trading_date_str = latest_trading_date.strftime('%Y-%m-%d')
-            if latest_trading_date_str != today_str:
-                print(f"\n📅 今日 {today_str} 非交易日，最近交易日为 {latest_trading_date_str}")
-                # 使用最近交易日作为比较基准
-                today = latest_trading_date
-                today_str = latest_trading_date_str
-
         # 检查缓存：如果今天已更新过，直接跳过
         update_cache_file = Path(self.data_dir) / '.update_cache.json'
         update_cache = {}
@@ -236,8 +226,19 @@ class QuantSystem:
 
         cache_date = update_cache.get('last_update_date')
         if cache_date == today_str and not max_stocks and not force_update:
-            print(f"✓ 数据已于 {cache_date} 收盘后更新过，无需重复更新")
-            return
+            # 交叉验证：缓存说今天更新过，但实际数据是否真的有今天的数据
+            actual_latest = self._get_latest_trading_date()
+            if actual_latest and actual_latest.strftime('%Y-%m-%d') == today_str:
+                print(f"✓ 数据已于 {cache_date} 收盘后更新过，无需重复更新")
+                return
+            else:
+                actual_str = actual_latest.strftime('%Y-%m-%d') if actual_latest else '未知'
+                print(f"⚠️ 缓存记录今天已更新，但实际数据最新为 {actual_str}，重新执行更新")
+                # 清除错误缓存
+                update_cache.pop('last_update_date', None)
+                import json
+                with open(update_cache_file, 'w', encoding='utf-8') as f:
+                    json.dump(update_cache, f)
 
         # 检查每只股票是否有当天数据
         if check_latest:
