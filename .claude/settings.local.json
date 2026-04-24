@@ -86,7 +86,24 @@
       "Bash(.venv/bin/python -c \"from utils.akshare_fetcher import AKShareFetcher; print\\('代码加载成功'\\)\" 2>&1)",
       "Bash(pkill -f \"python3 main.py\")",
       "Bash(git checkout:*)",
-      "Bash(xxd)"
+      "Bash(xxd)",
+      "Bash(sudo chown:*)",
+      "Bash(chmod -R u+rw .git/objects/)",
+      "Bash(chown -R ghostwhisper .git/objects/)",
+      "Bash(.venv/bin/python main.py run --max-stocks 20 --no-notify)",
+      "Bash(.venv/bin/python main.py run --max-stocks 500 --no-notify)",
+      "Bash(csvtool col:*)",
+      "Bash(.venv/bin/python main.py run --max-stocks 500 --force --no-notify)",
+      "Bash(.venv/bin/python main.py run --max-stocks 10 --force --no-notify)",
+      "Bash(.venv/bin/python -c \"from utils.akshare_fetcher import AKShareFetcher, TushareRateLimiter; print\\('OK'\\)\")",
+      "Bash(.venv/bin/python daily_backtest_fast.py --help)",
+      "WebSearch",
+      "WebFetch(domain:www.weather.com.cn)",
+      "Bash(date:*)",
+      "mcp__websearch__search",
+      "Bash(git rm:*)",
+      "Bash(grep -l \"calculate_industry_heat\\\\|industry_heat\" /Users/ghostwhisper/claudeWorkspace/a-share-quant-selector/*.py)",
+      "Bash(grep:*)"
     ]
   }
 }
