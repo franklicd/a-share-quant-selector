@@ -226,15 +226,21 @@ class QuantSystem:
 
         cache_date = update_cache.get('last_update_date')
         if cache_date == today_str and not max_stocks and not force_update:
-            # 交叉验证：缓存说今天更新过，但实际数据是否真的有今天的数据
-            actual_latest = self._get_latest_trading_date()
-            if actual_latest and actual_latest.strftime('%Y-%m-%d') == today_str:
+            # 交叉验证：抽样检查多只股票，确保大多数都有今天的数据
+            import random
+            all_codes = self.csv_manager.list_all_stocks()
+            sample = random.sample(all_codes, min(50, len(all_codes)))
+            has_today = sum(
+                1 for code in sample
+                if (df := self.csv_manager.read_stock(code)) is not None
+                and not df.empty
+                and pd.to_datetime(df.iloc[0]['date']).date() == today
+            )
+            if has_today >= len(sample) * 0.8:
                 print(f"✓ 数据已于 {cache_date} 收盘后更新过，无需重复更新")
                 return
             else:
-                actual_str = actual_latest.strftime('%Y-%m-%d') if actual_latest else '未知'
-                print(f"⚠️ 缓存记录今天已更新，但实际数据最新为 {actual_str}，重新执行更新")
-                # 清除错误缓存
+                print(f"⚠️ 缓存记录今天已更新，但抽样 {len(sample)} 只中仅 {has_today} 只有今天数据，重新执行更新")
                 update_cache.pop('last_update_date', None)
                 import json
                 with open(update_cache_file, 'w', encoding='utf-8') as f:
@@ -395,18 +401,8 @@ class QuantSystem:
                     # 如果所有数据都晚于目标日期，跳过该股票
                     continue
 
-            # 过滤无效股票（使用统一过滤规则，与选股逻辑完全一致）
-            from utils.stock_filter import is_valid_stock
-            if not is_valid_stock(name, df):
-                invalid_count += 1
-                continue
-                
-            # 缓存有效股票数据
-            stock_data_cache[code] = df
-            valid_codes.append(code)
-
-            # 顺手提取最新两天的成交额（避免后续二次读盘）
-            if not df.empty:
+            # 顺手提取最新两天的成交额（在过滤前提取，确保全市场覆盖）
+            if df is not None and not df.empty:
                 for row_idx in range(min(2, len(df))):
                     row = df.iloc[row_idx]
                     d = row['date']
@@ -419,6 +415,16 @@ class QuantSystem:
                         price = row.get('close', 0)
                         if pd.notna(vol) and pd.notna(price) and vol > 0 and price > 0:
                             _turnover_dict.setdefault(row_date, {})[code] = float(vol * price * 100)
+
+            # 过滤无效股票（使用统一过滤规则，与选股逻辑完全一致）
+            from utils.stock_filter import is_valid_stock
+            if not is_valid_stock(name, df):
+                invalid_count += 1
+                continue
+
+            # 缓存有效股票数据
+            stock_data_cache[code] = df
+            valid_codes.append(code)
 
             # 每500只显示进度
             if i % 500 == 0 or i == len(process_codes):
@@ -1128,8 +1134,11 @@ class QuantSystem:
         print(f"   回看天数: {lookback_days}天")
         print("=" * 60)
 
-        # 1. 更新数据
-        self._smart_update(max_stocks=max_stocks, force_update=force_update)
+        # 1. 更新数据（use_cache=True 时跳过，依赖已有数据）
+        if use_cache:
+            print("  [use_cache=True] 跳过数据更新，依赖本地已有数据")
+        else:
+            self._smart_update(max_stocks=max_stocks, force_update=force_update)
 
         # 2. 选股 + B1完美图形匹配
         match_result = self.select_with_b1_match(
@@ -1434,7 +1443,6 @@ B1 完美图形匹配:
     
     if args.pick_date is not None:
         # 校验日期格式是否正确
-        from datetime import datetime
         try:
             datetime.strptime(args.pick_date, '%Y-%m-%d')
         except ValueError:
@@ -1460,6 +1468,7 @@ B1 完美图形匹配:
             min_sim = args.min_similarity if args.min_similarity is not None else default_min_similarity
             lookback = args.lookback_days if args.lookback_days is not None else default_lookback_days
             M_days = args.M_days if args.M_days is not None else None
+            pick_date = args.pick_date or datetime.now().strftime('%Y-%m-%d')
             quant.run_with_b1_match(
                 category=args.category,
                 max_stocks=args.max_stocks,
@@ -1467,7 +1476,7 @@ B1 完美图形匹配:
                 min_similarity=min_sim,
                 lookback_days=lookback,
                 M_days=M_days,
-                pick_date=args.pick_date,
+                pick_date=pick_date,
                 filter_zge_risk=args.filter_zge_risk
             )
         else:
