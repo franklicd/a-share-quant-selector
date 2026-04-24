@@ -226,6 +226,21 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
             trigger_5pct_day = None  # 新增
             first_reach_order = None
 
+        # 判断板块
+        def get_board(code):
+            if code.startswith('688') or code.startswith('689'):
+                return '科创板'
+            if code.startswith('300') or code.startswith('301') or code.startswith('302') or \
+               code.startswith('303') or code.startswith('304') or code.startswith('305') or \
+               code.startswith('306') or code.startswith('307') or code.startswith('308') or \
+               code.startswith('309'):
+                return '创业板'
+            if code.startswith('8') or code.startswith('4'):
+                return '北交所'
+            return '主板'
+
+        board = get_board(code)
+
         # 计算行业热度（使用预计算缓存）
         # 从内置映射获取行业（不使用网络）
         industry = industry_fetcher.get_industry_for_stock(code, refresh_if_missing=False)
@@ -297,6 +312,7 @@ def _process_single_day(sel_date, stock_data_list, config_dict, top_n, hold_days
             'trigger_5pct_day': trigger_5pct_day if trigger_5pct_day is not None else '',  # 新增
             'first_reach_order': str(first_reach_order) if first_reach_order else '',
             'ever_below_zero': ever_below_zero,  # 是否曾跌破成本价
+            'board': board,
             # 行业热度字段
             'industry': industry if industry else '未知',
             'industry_heat_buy': round(industry_heat_buy, 2) if industry_heat_buy is not None else '',
@@ -789,7 +805,7 @@ class FastDailyBacktester:
 
         # 为每个行业预计算热度（使用成交额缓存加速）
         industry_cache = IndustryHeatCalculator(industry_fetcher)
-        industries_to_compute = list(industry_fetcher.industry_stocks_map.keys())[:50]
+        industries_to_compute = list(industry_fetcher.industry_stocks_map.keys())
         for ind_name in industries_to_compute:
             preloaded_data['industry_heats'][ind_name] = {}
             for date_str in trading_dates_str:
@@ -949,6 +965,7 @@ class FastDailyBacktester:
                 '达到 +5% 天数': f"第{r['trigger_5pct_day']}天" if r.get('trigger_5pct_day') not in [None, ''] else '-',  # 新增
                 '触发顺序': r.get('first_reach_order', '') or '-',
                 '是否曾跌破成本价': '是' if r.get('ever_below_zero') else '否',
+                '板块': r.get('board', '未知'),
                 # 行业热度字段
                 '行业': r.get('industry', '未知'),
                 '行业热度_买入日': r.get('industry_heat_buy', ''),
