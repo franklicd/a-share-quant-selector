@@ -1,7 +1,6 @@
 """
-A股数据抓取模块 - 使用 akshare / 直接HTTP请求
+A股数据抓取模块 - 使用 tushare 接口
 """
-import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
 import time
@@ -151,7 +150,7 @@ class AKShareFetcher:
             print(f"  保存股票名称失败: {e}")
 
     def _fetch_market_cap_tencent(self, stock_codes):
-        """使用腾讯接口批量获取市值数据（akshare备选方案）"""
+        """使用腾讯接口批量获取市值数据（tushare备选方案）"""
         market_cap_map = {}
         batch_size = 100
         total = len(stock_codes)
@@ -444,33 +443,6 @@ class AKShareFetcher:
                 print(f"  HTTP失败: {e}")
                 time.sleep(1)
         
-        # 方法2: akshare
-        for attempt in range(max_retries):
-            try:
-                print(f"  尝试akshare (第{attempt+1}/{max_retries}次)...")
-                
-                sh_df = ak.stock_sh_a_spot_em()
-                sz_df = ak.stock_sz_a_spot_em()
-                
-                all_stocks = pd.concat([sh_df[['代码', '名称']], sz_df[['代码', '名称']]])
-                all_stocks = all_stocks.drop_duplicates(subset=['代码'])
-                
-                code_pattern = r'^(00|30|60|68|88)\d{4}$'
-                all_stocks = all_stocks[all_stocks['代码'].str.match(code_pattern)]
-                
-                exclude_keywords = ['债', '基', 'ETF', 'LOF', '基金', '理财', '信托', 'B股', '指数', '国债', '企债', '转债', '回购', 'R-', 'GC', '退']
-                for keyword in exclude_keywords:
-                    all_stocks = all_stocks[~all_stocks['名称'].str.contains(keyword, na=False)]
-                
-                stock_dict = dict(zip(all_stocks['代码'], all_stocks['名称']))
-                print(f"✓ akshare获取成功: {len(stock_dict)} 只A股股票")
-                self._save_stock_names(stock_dict)
-                return stock_dict
-                
-            except Exception as e:
-                print(f"  akshare失败: {e}")
-                time.sleep(2 ** attempt)
-        
         # 降级: 本地缓存或默认列表
         print("\n网络连接失败，尝试加载本地缓存...")
         local_stocks = self._load_local_stock_names()
@@ -608,22 +580,6 @@ class AKShareFetcher:
         except Exception as e:
             print(f"  获取总市值失败：{e}")
         return None
-        try:
-            import akshare as ak
-            spot_df = ak.stock_individual_info_em(symbol=stock_code)
-            if not spot_df.empty:
-                total_cap_row = spot_df[spot_df['item'] == '总市值']
-                if not total_cap_row.empty:
-                    total_cap = total_cap_row['value'].values[0]
-                    if isinstance(total_cap, str):
-                        if '亿' in total_cap:
-                            return float(total_cap.replace('亿', '')) * 1e8
-                        else:
-                            return float(total_cap)
-                    return float(total_cap)
-        except Exception as e:
-            print(f"  获取总市值失败: {e}")
-        return None
     
     def _generate_mock_data(self, stock_code, years=6):
         """生成模拟数据（当网络不可用时使用）"""
@@ -734,58 +690,15 @@ class AKShareFetcher:
         """
         抓取近期数据用于增量更新
         优化：直接指定天数，避免计算误差
-        数据源优先级：tushare（默认） > akshare（备选 1） > 腾讯（备选 2）
+        数据源优先级：tushare（默认） > 腾讯（备选）
         """
         # 1. 优先使用 tushare
         df = self._fetch_stock_update_tushare(stock_code, days)
         if df is not None and not df.empty:
             return df
         
-        # 2. 使用 akshare 备选
-        df = self._fetch_stock_update_akshare(stock_code, days)
-        if df is not None and not df.empty:
-            return df
-        
-        # 3. 使用腾讯接口备选
+        # 2. 使用腾讯接口备选（tushare不可用时）
         return self._fetch_stock_update_tencent(stock_code, days)
-    
-    def _fetch_stock_update_akshare(self, stock_code, days=10):
-        """使用 akshare 获取近期数据（带重试机制）"""
-        import akshare as ak
-        from datetime import datetime, timedelta
-        
-        # 计算日期范围（多取 2 天确保覆盖）
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days + 2)
-        
-        # 重试 3 次
-        for attempt in range(3):
-            try:
-                df = ak.stock_zh_a_hist(
-                    symbol=stock_code,
-                    period="daily",
-                    start_date=start_date.strftime("%Y%m%d"),
-                    end_date=end_date.strftime("%Y%m%d"),
-                    adjust="qfq"
-                )
-                
-                if df is not None and not df.empty:
-                    # 字段映射
-                    df = df.rename(columns={
-                        '日期': 'date', '开盘': 'open', '收盘': 'close',
-                        '最高': 'high', '最低': 'low', '成交量': 'volume',
-                        '成交额': 'amount'
-                    })
-                    df['date'] = pd.to_datetime(df['date'])
-                    df = df.sort_values('date', ascending=False)
-                    return df
-                return None
-            except Exception as e:
-                if attempt < 2:
-                    time.sleep(1)  # 重试前等待 1 秒
-                else:
-                    print(f"  akshare 获取更新失败（重试 3 次）: {e}")
-                    return None
     
     def _fetch_stock_update_tencent(self, stock_code, days=10):
         """使用腾讯接口获取近期数据（备选）"""
@@ -907,8 +820,6 @@ class AKShareFetcher:
         :param max_stocks: 限制抓取数量（用于测试）
         :param skip_failed: 是否跳过之前失败的股票
         """
-        import akshare as ak
-        
         stock_dict = self.get_all_stock_codes()
         
         if not stock_dict:
@@ -1126,27 +1037,27 @@ class AKShareFetcher:
             print("=" * 60)
             return
         
-        # 批量获取最新市值数据（主接口：akshare，备选：腾讯）
+        # 批量获取最新市值数据（主接口：tushare，备选：腾讯）
         print("\n正在批量获取最新市值数据...")
         market_cap_map = {}
         
-        # 方法1: 尝试akshare接口
+        # 方法1: 尝试tushare接口
         try:
-            import akshare as ak
-            spot_df = ak.stock_zh_a_spot_em()
-            for _, row in spot_df.iterrows():
-                code = str(row['代码']).zfill(6)
-                cap = row['总市值']
-                if pd.notna(cap) and cap > 0:
-                    # 统一转为元
-                    if cap < 1e10:
-                        cap = int(cap * 1e8)
-                    else:
-                        cap = int(cap)
-                    market_cap_map[code] = cap
-            print(f"  ✓ akshare接口成功: {len(market_cap_map)} 只股票市值")
+            print("  尝试 tushare 接口获取市值...")
+            update_codes = [code for code, _ in stocks_to_update]
+            market_cap_map = self._fetch_market_cap_tushare(update_codes)
+            if market_cap_map:
+                print(f"  ✓ tushare接口成功: {len(market_cap_map)} 只股票市值")
+            else:
+                print("  tushare接口返回空，尝试腾讯备选接口...")
+                # 方法2: 使用腾讯接口备选（只获取需要更新的股票）
+                market_cap_map = self._fetch_market_cap_tencent(update_codes)
+                if market_cap_map:
+                    print(f"  ✓ 腾讯接口成功: {len(market_cap_map)} 只股票市值")
+                else:
+                    print(f"  ✗ 腾讯接口也失败，市值数据将缺失")
         except Exception as e:
-            print(f"  akshare接口失败: {e}")
+            print(f"  tushare接口失败: {e}")
             print("  尝试腾讯备选接口...")
             # 方法2: 使用腾讯接口备选（只获取需要更新的股票）
             update_codes = [code for code, _ in stocks_to_update]

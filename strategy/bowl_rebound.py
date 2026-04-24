@@ -221,29 +221,35 @@ class BowlReboundStrategy(BaseStrategy):
         
         # 缓存不存在或过期，从实时数据获取
         try:
-            import akshare as ak
-            # 获取实时数据
-            spot_df = ak.stock_individual_info_em(symbol=stock_code)
-            if not spot_df.empty:
-                # 查找总市值
-                total_cap_row = spot_df[spot_df['item'] == '总市值']
-                if not total_cap_row.empty:
-                    total_cap = total_cap_row['value'].values[0]
-                    # 转换为数字（可能是字符串）
-                    if isinstance(total_cap, str):
-                        # 处理"33.19亿"格式
-                        if '亿' in total_cap:
-                            total_cap = float(total_cap.replace('亿', '')) * 1e8
-                        else:
-                            total_cap = float(total_cap)
-                    
-                    # 写入缓存
-                    self._market_cap_cache[stock_code] = (total_cap, current_time)
-                    # 持久化到本地
-                    self._save_market_cap_cache()
-                    
-                    # 创建 Series
-                    return pd.Series([total_cap > self.params['CAP']] * len(df), index=df.index)
+            import tushare as ts
+            from datetime import datetime
+            
+            # 获取 tushare token
+            ts_token = os.environ.get('TUSHARE_TOKEN', '')
+            if not ts_token:
+                raise Exception("TUSHARE_TOKEN not set")
+            
+            ts.set_token(ts_token)
+            pro = ts.pro_api()
+            
+            # 确定市场标识
+            if stock_code.startswith('6'):
+                ts_code = f"{stock_code}.SH"
+            else:
+                ts_code = f"{stock_code}.SZ"
+            
+            # 获取实时行情
+            df_cap = pro.daily_basic(ts_code=ts_code, fields=['ts_code', 'trade_date', 'total_mv'])
+            if df_cap is not None and not df_cap.empty:
+                total_cap = float(df_cap['total_mv'].iloc[0]) * 10000  # 万元转元
+                
+                # 写入缓存
+                self._market_cap_cache[stock_code] = (total_cap, current_time)
+                # 持久化到本地
+                self._save_market_cap_cache()
+                
+                # 创建 Series
+                return pd.Series([total_cap > self.params['CAP']] * len(df), index=df.index)
         except Exception as e:
             # 如果实时获取失败，尝试用收盘价估算
             if 'close' in df.columns:
