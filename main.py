@@ -1273,7 +1273,8 @@ class QuantSystem:
             M_days=M_days,
             use_cache=use_cache,
             filter_zge_risk=filter_zge_risk,
-            rank_by_vol=rank_by_vol
+            rank_by_vol=rank_by_vol,
+            brick_filter=brick_filter,
         )
         
         return {
@@ -1334,7 +1335,12 @@ class QuantSystem:
         filter_zge_risk = kwargs.get('filter_zge_risk', False)
         if filter_zge_risk:
             param_parts.append('zge_filtered')
-        
+
+        # 添加砖型图过滤标识
+        brick_filter = kwargs.get('brick_filter', False)
+        if brick_filter:
+            param_parts.append('brick')
+
         # 组合参数标识
         param_suffix = '_' + '_'.join(param_parts) if param_parts else ''
         
