@@ -816,6 +816,39 @@ class QuantSystem:
             print(f"✓ 砖型图过滤完成: 通过 {brick_pass} 只，剔除 {brick_fail} 只")
         # ============== 砖型图过滤结束 ==============
 
+        # 4. 最终结果汇总（过滤后）
+        has_filter = filter_zge_risk or brick_filter
+        if has_filter:
+            total_final = sum(len(s) for s in results.values())
+            if total_final > 0:
+                print("\n" + "=" * 60)
+                print(f"📊 最终推荐榜（共 {total_final} 只）")
+                if filter_zge_risk:
+                    print("   已过滤: Z哥风控")
+                if brick_filter:
+                    print("   已过滤: 砖型图")
+                print("=" * 60)
+
+                for strategy_name, signals in results.items():
+                    if not signals:
+                        continue
+                    print(f"\n{strategy_name}: {len(signals)} 只")
+                    for signal in signals:
+                        code = signal['code']
+                        name = signal.get('name', stock_names.get(code, '未知'))
+                        for s in signal['signals']:
+                            cat_emoji = {'bowl_center': '🥣', 'near_duokong': '📊', 'near_short_trend': '📈'}.get(s.get('category'), '❓')
+                            yang_tag = " | 🔺阳量>阴量" if s.get('yang_gt_yin') else ""
+                            pv_align = s.get('price_volume_alignment', 0)
+                            pv_tag = f" | 量价一致性={pv_align}%" if pv_align > 0 else ""
+                            brick_tag = " | 🧱砖型图" if s.get('brick_passed') else ""
+                            zge_tag = ""
+                            if signal.get('zge_passed') is not None:
+                                zge_tag = " | ✅Z哥通过" if signal.get('zge_passed') else " | ⚠️Z哥风控"
+                            print(f"  {cat_emoji} {code} {name}: 价格={s['close']}, J={s['J']}, 理由={s['reasons']}{yang_tag}{pv_tag}{brick_tag}{zge_tag}")
+            else:
+                print("\n⚠️ 过滤后无股票满足条件")
+
         # 3. 发送通知（可选K线图）
         if results and notify:
             if chart:
@@ -1222,7 +1255,13 @@ class QuantSystem:
         if matched_results:
             print("\n" + "=" * 60)
             mode_label = "成交量倍数排名" if rank_by_vol else f"B1完美图形匹配"
-            print(f"📊 Top {TOP_N_RESULTS} {mode_label}结果")
+            filter_tags = []
+            if brick_filter:
+                filter_tags.append("🧱砖型图")
+            if filter_zge_risk:
+                filter_tags.append("Z哥风控")
+            filter_label = f"（已过滤: {'+'.join(filter_tags)}）" if filter_tags else ""
+            print(f"📊 Top {TOP_N_RESULTS} {mode_label}结果{filter_label}")
             print("=" * 60)
             for i, r in enumerate(matched_results[:TOP_N_RESULTS], 1):
                 emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
