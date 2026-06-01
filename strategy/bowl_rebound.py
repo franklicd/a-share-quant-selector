@@ -46,7 +46,7 @@ from utils.technical import (
 class BowlReboundStrategy(BaseStrategy):
     """碗口反弹策略 - 分类标记版"""
     
-    def __init__(self, params=None):
+    def __init__(self, params=None, skip_kdj=False):
         # 默认参数
         default_params = {
             'N': 4,              # 成交量倍数
@@ -60,12 +60,13 @@ class BowlReboundStrategy(BaseStrategy):
             'M3': 57,            # MA周期3 (多空线)
             'M4': 114            # MA周期4 (多空线)
         }
-        
+
         # 合并用户参数
         if params:
             default_params.update(params)
-        
+
         super().__init__("碗口反弹策略", default_params)
+        self.skip_kdj = skip_kdj
     
     def calculate_indicators(self, df) -> pd.DataFrame:
         """
@@ -283,8 +284,8 @@ class BowlReboundStrategy(BaseStrategy):
         if not latest['trend_above']:
             return []
         
-        # 2. J值条件
-        if not latest['j_low']:
+        # 2. J值条件（B1Plus模式下跳过）
+        if not self.skip_kdj and not latest['j_low']:
             return []
         
         # 3. 异动条件：在M天内存在放量阳线
@@ -304,7 +305,32 @@ class BowlReboundStrategy(BaseStrategy):
 
         if key_candles.empty:
             return []
-        
+
+        # 近10日阳量/阴量金额对比
+        recent_10 = df.head(10)
+        yang_amount = recent_10.loc[recent_10['close'] > recent_10['open'], 'amount'].sum()
+        yin_amount = recent_10.loc[recent_10['close'] < recent_10['open'], 'amount'].sum()
+        yang_gt_yin = yang_amount > yin_amount
+
+        # ========== 20日量价趋势一致度 ==========
+        # 量随价升、量随价减：每天价格变化方向与成交额变化方向一致
+        recent_20 = df.head(20)
+        pv_alignment = 0.0
+        if len(recent_20) >= 2:
+            # 确保有成交额字段，若无则用 volume * close 估算
+            if 'amount' not in recent_20.columns or recent_20['amount'].isna().all():
+                recent_20 = recent_20.copy()
+                recent_20['amount'] = recent_20['volume'] * recent_20['close']
+            align_count = 0
+            total_compare = 0
+            for i in range(len(recent_20) - 1):
+                price_up = recent_20.iloc[i]['close'] > recent_20.iloc[i + 1]['close']
+                amount_up = recent_20.iloc[i]['amount'] > recent_20.iloc[i + 1]['amount']
+                if price_up == amount_up:  # 同涨或同跌
+                    align_count += 1
+                total_compare += 1
+            pv_alignment = (align_count / total_compare * 100) if total_compare > 0 else 0.0
+
         # ========== 分类标记（按优先级） ==========
         
         reasons = []
@@ -335,12 +361,87 @@ class BowlReboundStrategy(BaseStrategy):
             'close': round(latest['close'], 2),
             'J': round(latest['J'], 2),
             'volume_ratio': round(latest['vol_ratio'], 2) if not pd.isna(latest['vol_ratio']) else 1.0,
+            'key_vol_ratio': round(latest_key['vol_ratio'], 2) if not pd.isna(latest_key['vol_ratio']) else 1.0,
             'market_cap': round(latest['market_cap'] / 1e8, 2) if 'market_cap' in latest and pd.notna(latest['market_cap']) else 0,
             'short_term_trend': round(latest['short_term_trend'], 2),
             'bull_bear_line': round(latest['bull_bear_line'], 2),
             'reasons': reasons,
             'category': category,  # 分类标记
             'key_candle_date': latest_key['date'],
+            'yang_gt_yin': yang_gt_yin,
+            'price_volume_alignment': round(pv_alignment, 1),  # 20日量价趋势一致度(%)
         }
         
+        return [signal_info]
+
+    def select_consolidation(self, df, stock_name='', after_high_only=False) -> list:
+        """
+        横盘整理选股逻辑：
+        在过去最多60个交易日内，股价达到区间高点后一直未突破，
+        多空线保持上升，收盘价在多空线之上，短期趋势线在多空线之上。
+
+        :param after_high_only: False=条件2/3/4检查整个60天窗口（更严格），
+                                True=仅检查高点之后的整理期（更宽松）
+        """
+        if df.empty or len(df) < 20:
+            return []
+
+        from utils.stock_filter import is_valid_stock
+        if not is_valid_stock(stock_name, df):
+            return []
+
+        # 取最近60个交易日
+        window = min(60, len(df))
+        recent = df.head(window).iloc[::-1]  # 转为时间正序（旧→新）
+
+        # 找到区间最高价
+        high_idx = recent['high'].idxmax()
+        high_price = recent.loc[high_idx, 'high']
+        high_pos = recent.index.get_loc(high_idx)
+
+        # 高点之后至少有10个交易日的整理期
+        after_high = recent.iloc[high_pos + 1:]
+        if len(after_high) < 10:
+            return []
+
+        # 条件1：高点之后，收盘价一直未突破该高点
+        if after_high['close'].max() >= high_price:
+            return []
+
+        # 条件2/3/4的检查范围取决于 after_high_only 参数
+        check_range = after_high if after_high_only else recent
+
+        # 条件2：收盘价在多空线之上
+        if (check_range['close'] <= check_range['bull_bear_line']).any():
+            return []
+
+        # 条件3：短期趋势线在多空线之上
+        if (check_range['short_term_trend'] <= check_range['bull_bear_line']).any():
+            return []
+
+        # 条件4：多空线保持上升趋势（时间正序下，后一天 >= 前一天）
+        bb = check_range['bull_bear_line'].dropna()
+        if len(bb) < 2:
+            return []
+        if (bb.diff().dropna() < 0).any():
+            return []
+
+        # 构建信号
+        latest = df.iloc[0]
+        consolidation_days = len(after_high)
+
+        signal_info = {
+            'date': latest['date'],
+            'close': round(latest['close'], 2),
+            'J': round(latest['J'], 2) if 'J' in latest and pd.notna(latest['J']) else '-',
+            'volume_ratio': round(latest['vol_ratio'], 2) if 'vol_ratio' in latest and pd.notna(latest['vol_ratio']) else 1.0,
+            'market_cap': round(latest['market_cap'] / 1e8, 2) if 'market_cap' in latest and pd.notna(latest['market_cap']) else 0,
+            'short_term_trend': round(latest['short_term_trend'], 2),
+            'bull_bear_line': round(latest['bull_bear_line'], 2),
+            'reasons': [f'横盘整理{consolidation_days}天'],
+            'category': 'high_consolidation',
+            'high_price': round(high_price, 2),
+            'yang_gt_yin': True,  # 后面在 main.py 中单独计算
+        }
+
         return [signal_info]

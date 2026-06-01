@@ -36,6 +36,10 @@ sys.path.insert(0, str(project_root))
 # 版本信息
 __version__ = "1.0.0"
 
+# VPN 路由修复（必须在网络请求之前执行）
+from utils import patch_requests_for_vpn
+patch_requests_for_vpn()
+
 # 全局模块导入（只在主进程导入一次，避免子进程重复加载）
 from utils.akshare_fetcher import AKShareFetcher
 from utils.csv_manager import CSVManager
@@ -61,6 +65,18 @@ def _process_stock_parallel(args):
         df_with_indicators = strategy.calculate_indicators(df)
         # 选股
         signal_list = strategy.select_stocks(df_with_indicators, name)
+        return code, name, signal_list, df_with_indicators if signal_list else None
+    except Exception as e:
+        logger.error(f"处理 {code} 异常: {str(e)}", exc_info=False)
+        return code, name, [], None
+
+# 横盘整理模式的并行处理函数
+def _process_consolidation_parallel(args):
+    code, df, strategy_class, strategy_params, name, after_high_only = args
+    try:
+        strategy = strategy_class(strategy_params)
+        df_with_indicators = strategy.calculate_indicators(df)
+        signal_list = strategy.select_consolidation(df_with_indicators, name, after_high_only=after_high_only)
         return code, name, signal_list, df_with_indicators if signal_list else None
     except Exception as e:
         logger.error(f"处理 {code} 异常: {str(e)}", exc_info=False)
@@ -293,12 +309,13 @@ class QuantSystem:
         self.fetcher.daily_update(max_stocks=max_stocks, force_update=force_update)
         print("\n✓ 数据更新完成")
 
-    def select_stocks(self, category='all', max_stocks=None, return_data=False, M_days=None, pick_date=None):
+    def select_stocks(self, category='all', max_stocks=None, return_data=False, M_days=None, pick_date=None, skip_kdj=False):
         """执行选股
         :param category: 股票分类筛选，'all'表示全部，其他值按分类筛选
         :param max_stocks: 限制处理的股票数量（用于快速测试）
         :param return_data: 是否返回股票数据字典（用于K线图生成）
         :param M_days: 碗口反弹策略的回溯天数 M，None 则使用配置文件值
+        :param skip_kdj: 是否跳过KDJ过滤（B1Plus模式）
         :return: (results, stock_names) 或 (results, stock_names, stock_data_dict, turnover_dict)
                  turnover_dict: {date_str: {code: amount}} 从内存数据顺手提取，避免二次读盘
         """
@@ -317,6 +334,12 @@ class QuantSystem:
             return {}, {}
         
         print(f"已加载 {len(self.registry.list_strategies())} 个策略")
+        # 如果启用了 skip_kdj，设置到碗口反弹策略
+        if skip_kdj:
+            for strategy_name, strategy_obj in self.registry.strategies.items():
+                if hasattr(strategy_obj, 'skip_kdj'):
+                    strategy_obj.skip_kdj = True
+                    print(f"  ⚠️  {strategy_name}: 跳过KDJ过滤（B1Plus模式）")
         # 如果传入了 M_days，覆盖所有策略的 M 参数
         if M_days is not None:
             print(f"⚠️  使用命令行覆盖策略参数 M = {M_days}")
@@ -497,9 +520,16 @@ class QuantSystem:
             results[strategy_name] = signals
             print(f"  ✓ 选股完成: 共 {len(signals)} 只")
         
+
+        # 按20日量价趋势一致度降序排列（一致度越高越靠前）
+        for strategy_name in results:
+            results[strategy_name].sort(
+                key=lambda x: x['signals'][0].get('price_volume_alignment', 0) if x.get('signals') else 0,
+                reverse=True
+            )
         # 显示结果汇总
         print("\n" + "=" * 60)
-        print("📊 选股结果汇总")
+        print("📊 选股结果汇总（已按20日量价一致度排序）")
         print("=" * 60)
         
         for strategy_name, signals in results.items():
@@ -509,7 +539,10 @@ class QuantSystem:
                 name = signal.get('name', stock_names.get(code, '未知'))
                 for s in signal['signals']:
                     cat_emoji = {'bowl_center': '🥣', 'near_duokong': '📊', 'near_short_trend': '📈'}.get(s.get('category'), '❓')
-                    print(f"  {cat_emoji} {code} {name}: 价格={s['close']}, J={s['J']}, 理由={s['reasons']}")
+                    yang_tag = " | 🔺阳量>阴量" if s.get('yang_gt_yin') else ""
+                    pv_align = s.get('price_volume_alignment', 0)
+                    pv_tag = f" | 量价一致性={pv_align}%" if pv_align > 0 else ""
+                    print(f"  {cat_emoji} {code} {name}: 价格={s['close']}, J={s['J']}, 理由={s['reasons']}{yang_tag}{pv_tag}")
         
         # 显示分类统计
         print("\n" + "-" * 60)
@@ -525,13 +558,173 @@ class QuantSystem:
             return results, stock_names, indicators_dict, _turnover_dict
         
         return results, stock_names
-    
-    def run_full(self, category='all', max_stocks=None, no_notify=False, no_chart=False, M_days=None, pick_date=None, force_update=False, filter_zge_risk=False):
-        """完整流程：更新 + 选股 + 通知（带K线图）
+
+    def run_consolidation(self, max_stocks=None, notify=False, chart=False, pick_date=None, force_update=False, after_high_only=False):
+        """横盘整理选股模式：高点后整理，多空线上升，价格在线上
+        :param after_high_only: True=条件仅检查高点之后（宽松），False=检查整个60天窗口（严格）
+        """
+        from datetime import datetime
+        import json
+        from pathlib import Path
+
+        print("=" * 60)
+        print("📊 执行横盘整理选股模式")
+        if max_stocks:
+            print(f"   快速测试模式：只处理前 {max_stocks} 只股票")
+        print("=" * 60)
+
+        # 1. 更新数据
+        self._smart_update(max_stocks=max_stocks, force_update=force_update)
+
+        # 2. 加载股票数据
+        all_stocks = self.csv_manager.list_all_stocks()
+        stock_names = self._load_stock_names({})
+
+        if max_stocks:
+            process_codes = all_stocks[:max_stocks]
+        else:
+            process_codes = all_stocks
+
+        from utils.stock_filter import is_valid_stock
+        import gc
+
+        valid_codes = []
+        stock_data_cache = {}
+        invalid_count = 0
+
+        print(f"\n加载 {len(process_codes)} 只股票数据...")
+        for i, code in enumerate(process_codes, 1):
+            name = stock_names.get(code, '未知')
+            df = self.csv_manager.read_stock(code)
+            if df is None or df.empty:
+                invalid_count += 1
+                continue
+
+            # 日期截断（回测支持）
+            if pick_date:
+                if isinstance(pick_date, str):
+                    pick_date_dt = datetime.strptime(pick_date, '%Y-%m-%d')
+                else:
+                    pick_date_dt = pick_date
+                df = df[df['date'] <= pick_date_dt]
+
+            if not is_valid_stock(name, df):
+                invalid_count += 1
+                continue
+
+            stock_data_cache[code] = df
+            valid_codes.append(code)
+
+            if i % 500 == 0 or i == len(process_codes):
+                gc.collect()
+                print(f"  进度: [{i}/{len(process_codes)}] 有效 {len(valid_codes)} 只，过滤 {invalid_count} 只...")
+
+        print(f"\n✓ 数据加载完成：共 {len(valid_codes)} 只有效股票")
+
+        # 3. 并行执行横盘整理选股
+        print("\n执行横盘整理选股...")
+        self.registry.auto_register_from_directory("strategy")
+        strategy = self.registry.strategies.get('BowlReboundStrategy')
+        if not strategy:
+            print("✗ 未找到BowlReboundStrategy")
+            return
+
+        process_args = [
+            (code, stock_data_cache[code], strategy.__class__, strategy.params, stock_names.get(code, '未知'), after_high_only)
+            for code in valid_codes
+        ]
+
+        import multiprocessing as mp
+        num_workers = max(1, mp.cpu_count() - 1)
+        print(f"  启动 {num_workers} 个进程并行计算...")
+
+        results = {}
+        signals = []
+        indicators_dict = {}
+
+        with mp.Pool(num_workers) as pool:
+            results_iter = pool.imap(_process_consolidation_parallel, process_args, chunksize=20)
+
+            for i, (code, name, signal_list, df_with_indicators) in enumerate(results_iter, 1):
+                if signal_list:
+                    # 补算阳量>阴量标记
+                    for s in signal_list:
+                        recent_10 = stock_data_cache[code].head(10)
+                        yang = recent_10.loc[recent_10['close'] > recent_10['open'], 'amount'].sum()
+                        yin = recent_10.loc[recent_10['close'] < recent_10['open'], 'amount'].sum()
+                        s['yang_gt_yin'] = yang > yin
+
+                    signals.append({
+                        'code': code,
+                        'name': name,
+                        'signals': signal_list
+                    })
+                    if df_with_indicators is not None:
+                        indicators_dict[code] = df_with_indicators
+
+                if i % 200 == 0 or i == len(valid_codes):
+                    gc.collect()
+                    print(f"  进度: [{i}/{len(valid_codes)}] 选出 {len(signals)} 只...")
+
+        results['BowlReboundStrategy'] = signals
+        print(f"\n✓ 横盘整理选股完成: 共 {len(signals)} 只")
+
+        # 4. 输出结果
+        print("\n" + "=" * 60)
+        print("📊 横盘整理选股结果")
+        print("=" * 60)
+        for signal in signals:
+            code = signal['code']
+            name = signal.get('name', stock_names.get(code, '未知'))
+            for s in signal['signals']:
+                high_price = s.get('high_price', '-')
+                days = s.get('reasons', [''])[0]
+                yang_tag = " | 🔺阳量>阴量" if s.get('yang_gt_yin') else ""
+                print(f"  📊 {code} {name}: 价格={s['close']}, 高点={high_price}, {days}{yang_tag}")
+        print("-" * 60)
+
+        # 5. 保存结果到文件
+        import json
+        from pathlib import Path
+        results_dir = Path(self.data_dir) / 'results'
+        results_dir.mkdir(exist_ok=True)
+        save_date = pick_date or datetime.now().strftime('%Y-%m-%d')
+        mode_tag = 'consolidation_宽松' if after_high_only else 'consolidation_严格'
+        output_file = results_dir / f'{save_date}_results_{mode_tag}.json'
+
+        save_data = {
+            'date': save_date,
+            'mode': mode_tag,
+            'total': len(signals),
+            'stocks': []
+        }
+        for signal in signals:
+            code = signal['code']
+            name = signal.get('name', stock_names.get(code, '未知'))
+            for s in signal['signals']:
+                save_data['stocks'].append({
+                    'code': code,
+                    'name': name,
+                    'close': float(s.get('close', 0)),
+                    'high_price': float(s.get('high_price', 0)),
+                    'reasons': s.get('reasons', []),
+                    'yang_gt_yin': bool(s.get('yang_gt_yin', False)),
+                    'market_cap': float(s.get('market_cap', 0)),
+                })
+
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(save_data, f, ensure_ascii=False, indent=2)
+        print(f"✓ 结果已保存: {output_file}")
+
+        return results, stock_names
+
+    def run_full(self, category='all', max_stocks=None, notify=False, chart=False, M_days=None, pick_date=None, force_update=False, filter_zge_risk=False, brick_filter=False):
+        """完整流程：更新 + 选股 + 通知（可选K线图）
         :param max_stocks: 限制处理的股票数量（用于快速测试）
-        :param no_notify: 是否跳过通知发送
-        :param no_chart: 是否跳过K线图生成
+        :param notify: 是否发送飞书通知（默认不发送）
+        :param chart: 是否生成K线图并发送（默认不生成，需配合notify使用）
         :param filter_zge_risk: 是否剔除触发Z哥风控规则的股票
+        :param brick_filter: 是否启用砖型图三层过滤
         """
         from datetime import datetime
         import json
@@ -598,17 +791,35 @@ class QuantSystem:
             print(f"✓ 剔除完成: 原有 {filtered_total} 只，保留 {new_total} 只，移除 {removed_count} 只触发风控的股票")
             filtered_total = new_total
 
-        # 3. 发送通知（带K线图）
-        if results and not no_notify:
-            if no_chart:
-                # 只发送文本，跳过K线图
-                self.notifier.send_stock_selection(
-                    results,
-                    stock_names,
-                    category_filter=category
-                )
-            else:
-                # 使用带K线图的发送方法
+        # ============== 砖型图三层过滤 ==============
+        if brick_filter:
+            print("\n[砖型图过滤] 开始执行砖型图三层筛选...")
+            from strategy.brick_filter import BrickFilter
+            bf = BrickFilter()
+            brick_pass = 0
+            brick_fail = 0
+            for strategy_name, signals in results.items():
+                passed = []
+                for signal in signals:
+                    code = signal['code']
+                    if code in stock_data_dict and not stock_data_dict[code].empty:
+                        ok, bi = bf.filter_stock(stock_data_dict[code])
+                        signal['brick_passed'] = ok
+                        if not ok:
+                            brick_fail += 1
+                            continue
+                        brick_pass += 1
+                        passed.append(signal)
+                    else:
+                        brick_fail += 1
+                results[strategy_name] = passed
+            print(f"✓ 砖型图过滤完成: 通过 {brick_pass} 只，剔除 {brick_fail} 只")
+        # ============== 砖型图过滤结束 ==============
+
+        # 3. 发送通知（可选K线图）
+        if results and notify:
+            if chart:
+                # 带K线图发送
                 self.notifier.send_stock_selection_with_charts(
                     results,
                     stock_names,
@@ -617,35 +828,47 @@ class QuantSystem:
                     params=self.registry.strategies.get('BowlReboundStrategy', {}).params if self.registry.strategies else {},
                     send_text_first=True
                 )
+            else:
+                # 只发送文本
+                self.notifier.send_stock_selection(
+                    results,
+                    stock_names,
+                    category_filter=category
+                )
+        elif results:
+            print("\n💡 提示: 使用 --notify 发送飞书通知，--chart 附带K线图")
 
         return results
     
-    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, lookback_days=None, M_days=None, pick_date=None, use_cache=False, force_update=False, filter_zge_risk=False):
+    def select_with_b1_match(self, category='all', max_stocks=None, min_similarity=None, M_days=None, pick_date=None, use_cache=False, force_update=False, filter_zge_risk=False, skip_kdj=False, cases_list=None, weights=None, cache_file=None, label='B1', rank_by_vol=False, brick_filter=False):
         """
-        执行选股 + B1完美图形匹配排序
-        
+        执行选股 + 完美图形匹配排序（支持 B1 / B1Plus）
+
         Args:
             category: 股票分类筛选，'all'表示全部
             max_stocks: 限制处理的股票数量
             min_similarity: 最小相似度阈值，低于此值不显示
-            lookback_days: 回看天数，默认35天
-            
+            skip_kdj: 是否跳过KDJ过滤（B1Plus模式）
+            cases_list: 案例配置列表（B1Plus模式时传入）
+            weights: 相似度权重（B1Plus模式时传入）
+            cache_file: 缓存文件路径（B1Plus模式时传入）
+            label: 流程标签（B1 / B1Plus）
+
         Returns:
             dict: 包含选股结果和匹配结果
         """
         # 从配置读取默认值
-        from strategy.pattern_config import MIN_SIMILARITY_SCORE, DEFAULT_LOOKBACK_DAYS
+        from strategy.pattern_config import MIN_SIMILARITY_SCORE
         if min_similarity is None:
             min_similarity = MIN_SIMILARITY_SCORE
-        if lookback_days is None:
-            lookback_days = DEFAULT_LOOKBACK_DAYS
         
         print("=" * 60)
-        print("🎯 执行选股 + B1完美图形匹配")
+        print(f"🎯 执行选股 + {label}完美图形匹配")
         if max_stocks:
             print(f"   快速测试模式：只处理前 {max_stocks} 只股票")
         print(f"   相似度阈值: {min_similarity}%")
-        print(f"   回看天数: {lookback_days}天")
+        if skip_kdj:
+            print(f"   模式: {label}（跳过KDJ过滤）")
         print("=" * 60)
         
         # 1. 先执行原有选股逻辑
@@ -655,7 +878,8 @@ class QuantSystem:
             max_stocks=max_stocks,
             return_data=True,
             M_days=M_days,
-            pick_date=pick_date
+            pick_date=pick_date,
+            skip_kdj=skip_kdj
         )
         
         # 统计选股总数
@@ -666,13 +890,18 @@ class QuantSystem:
         
         print(f"\n✓ 策略选出 {total_selected} 只股票")
         
-        # 2. 初始化B1完美图形库
-        print("\n[2/3] 初始化B1完美图形库...")
+        # 2. 初始化完美图形库
+        print(f"\n[2/3] 初始化{label}完美图形库...")
         try:
             from strategy.pattern_library import B1PatternLibrary
             from strategy.pattern_config import MIN_SIMILARITY_SCORE
-            
-            library = B1PatternLibrary(self.csv_manager)
+
+            library = B1PatternLibrary(
+                self.csv_manager,
+                cases_list=cases_list,
+                weights=weights,
+                cache_file=cache_file,
+            )
             
             if not library.cases:
                 print("⚠️ 警告: 案例库为空，可能数据不足")
@@ -687,8 +916,41 @@ class QuantSystem:
             return {'results': results, 'stock_names': stock_names, 'matched': []}
         
         # 3. 对每只候选股进行匹配
-        print("\n[3/3] 执行B1完美图形匹配...")
         matched_results = []
+
+        # 按成交量倍数排名模式：跳过B1图形匹配
+        if rank_by_vol:
+            print("\n[3/3] 跳过B1图形匹配，按成交量倍数排名...")
+            for strategy_name, signals in results.items():
+                for signal in signals:
+                    code = signal['code']
+                    name = signal.get('name', stock_names.get(code, '未知'))
+                    s = signal['signals'][0] if signal.get('signals') else {}
+                    matched_results.append({
+                        'stock_code': code,
+                        'stock_name': name,
+                        'strategy': strategy_name,
+                        'category': s.get('category', 'unknown'),
+                        'close': s.get('close', '-'),
+                        'J': s.get('J', '-'),
+                        'volume_ratio': float(s.get('volume_ratio', 1.0)),
+                        'key_vol_ratio': float(s.get('key_vol_ratio', 1.0)),
+                        'similarity_score': float(s.get('key_vol_ratio', 1.0)) * 10,
+                        'matched_case': '',
+                        'matched_date': '',
+                        'matched_code': '',
+                        'breakdown': {},
+                        'tags': [],
+                        'description': f"突破量比{s.get('key_vol_ratio', 1.0):.1f}倍",
+                        'all_matches': [],
+                        'industry': '未知',
+                        'industry_heat': 'N/A',
+                        'industry_heat_change': None,
+                    })
+            matched_results.sort(key=lambda x: x['key_vol_ratio'], reverse=True)
+            print(f"✓ 按成交量倍数排名完成: {len(matched_results)} 只")
+        else:
+            print(f"\n[3/3] 执行{label}完美图形匹配...")
 
         # 初始化行业数据获取器（用于获取行业和行业热度）
         import pandas as pd
@@ -824,71 +1086,72 @@ class QuantSystem:
         # 行业热度 memo 缓存，key=(industry, date)，避免同行业多只股票重复计算
         industry_heat_memo = {}
 
-        for strategy_name, signals in results.items():
-            for signal in signals:
-                code = signal['code']
-                name = signal.get('name', stock_names.get(code, '未知'))
+        if not rank_by_vol:
+            for strategy_name, signals in results.items():
+                for signal in signals:
+                    code = signal['code']
+                    name = signal.get('name', stock_names.get(code, '未知'))
 
-                # 获取该股票的完整数据
-                if code not in stock_data_dict:
-                    continue
+                    # 获取该股票的完整数据
+                    if code not in stock_data_dict:
+                        continue
 
-                df = stock_data_dict[code]
-                if df.empty:
-                    continue
+                    df = stock_data_dict[code]
+                    if df.empty:
+                        continue
 
-                try:
-                    # 匹配最佳案例（使用指定回看天数）
-                    match_result = library.find_best_match(code, df, lookback_days=lookback_days)
+                    try:
+                        # 匹配最佳案例（每个案例使用各自的lookback_days）
+                        match_result = library.find_best_match(code, df)
 
-                    if match_result.get('best_match'):
-                        best = match_result['best_match']
-                        score = best.get('similarity_score', 0)
+                        if match_result.get('best_match'):
+                            best = match_result['best_match']
+                            score = best.get('similarity_score', 0)
 
-                        # 只保留超过阈值的股票
-                        if score >= min_similarity:
-                            # 获取第一个信号的信息
-                            s = signal['signals'][0] if signal.get('signals') else {}
+                            # 只保留超过阈值的股票
+                            if score >= min_similarity:
+                                # 获取第一个信号的信息
+                                s = signal['signals'][0] if signal.get('signals') else {}
 
-                            # 获取行业信息（如果缓存中没有，尝试从 API 获取）
-                            industry = industry_fetcher.get_industry_for_stock(code, refresh_if_missing=True)
+                                # 获取行业信息（如果缓存中没有，尝试从 API 获取）
+                                industry = industry_fetcher.get_industry_for_stock(code, refresh_if_missing=True)
 
-                            # 获取行业热度（使用 memo 缓存，同行业只计算一次）
-                            industry_heat = None
-                            industry_heat_change = None
-                            if industry and heat_calc and heat_calc_date:
-                                memo_key = (industry, heat_calc_date)
-                                if memo_key not in industry_heat_memo:
-                                    industry_heat_memo[memo_key] = heat_calc.calculate_industry_heat_fast(
-                                        industry, heat_calc_date, turnover_cache, all_market_stocks)
-                                industry_heat, industry_heat_change = industry_heat_memo[memo_key]
+                                # 获取行业热度（使用 memo 缓存，同行业只计算一次）
+                                industry_heat = None
+                                industry_heat_change = None
+                                if industry and heat_calc and heat_calc_date:
+                                    memo_key = (industry, heat_calc_date)
+                                    if memo_key not in industry_heat_memo:
+                                        industry_heat_memo[memo_key] = heat_calc.calculate_industry_heat_fast(
+                                            industry, heat_calc_date, turnover_cache, all_market_stocks)
+                                    industry_heat, industry_heat_change = industry_heat_memo[memo_key]
 
-                            matched_results.append({
-                                'stock_code': code,
-                                'stock_name': name,
-                                'strategy': strategy_name,
-                                'category': s.get('category', 'unknown'),
-                                'close': s.get('close', '-'),
-                                'J': s.get('J', '-'),
-                                'similarity_score': score,
-                                'matched_case': best.get('case_name', ''),
-                                'matched_date': best.get('case_date', ''),
-                                'matched_code': best.get('case_code', ''),
-                                'breakdown': best.get('breakdown', {}),
-                                'tags': best.get('tags', []),
-                                'description': best.get('description', ''),
-                                'all_matches': best.get('all_matches', []),
-                                'industry': industry if industry else '未知',
-                                'industry_heat': round(industry_heat, 1) if industry_heat is not None else 'N/A',
-                                'industry_heat_change': round(industry_heat_change, 1) if industry_heat_change is not None else None,
-                            })
-                            
-                except Exception as e:
-                    print(f"  ⚠️ 匹配 {code} 失败: {e}")
-                    continue
-        
-        # 按相似度排序
-        matched_results.sort(key=lambda x: x['similarity_score'], reverse=True)
+                                matched_results.append({
+                                    'stock_code': code,
+                                    'stock_name': name,
+                                    'strategy': strategy_name,
+                                    'category': s.get('category', 'unknown'),
+                                    'close': s.get('close', '-'),
+                                    'J': s.get('J', '-'),
+                                    'similarity_score': score,
+                                    'matched_case': best.get('case_name', ''),
+                                    'matched_date': best.get('case_date', ''),
+                                    'matched_code': best.get('case_code', ''),
+                                    'breakdown': best.get('breakdown', {}),
+                                    'tags': best.get('tags', []),
+                                    'description': best.get('description', ''),
+                                    'all_matches': best.get('all_matches', []),
+                                    'industry': industry if industry else '未知',
+                                    'industry_heat': round(industry_heat, 1) if industry_heat is not None else 'N/A',
+                                    'industry_heat_change': round(industry_heat_change, 1) if industry_heat_change is not None else None,
+                                })
+
+                    except Exception as e:
+                        print(f"  ⚠️ 匹配 {code} 失败: {e}")
+                        continue
+
+            # 按相似度排序
+            matched_results.sort(key=lambda x: x['similarity_score'], reverse=True)
         
         # ============== Z哥交易规则处理 ==============
         print("\n[Z哥过滤] 开始执行Z哥交易规则标注...")
@@ -930,6 +1193,27 @@ class QuantSystem:
         else:
             print(f"✓ Z哥规则标注完成: 共 {len(matched_results)} 只股票")
         # ============== Z哥处理结束 ==============
+
+        # ============== 砖型图三层过滤 ==============
+        if brick_filter:
+            print("\n[砖型图过滤] 开始执行砖型图三层筛选...")
+            from strategy.brick_filter import BrickFilter
+            bf = BrickFilter()
+            brick_before = len(matched_results)
+            brick_passed = []
+            for result in matched_results:
+                code = result['stock_code']
+                if code in stock_data_dict and not stock_data_dict[code].empty:
+                    ok, bi = bf.filter_stock(stock_data_dict[code])
+                    result['brick_passed'] = ok
+                    if ok:
+                        brick_passed.append(result)
+                else:
+                    result['brick_passed'] = False
+            matched_results = brick_passed
+            brick_removed = brick_before - len(matched_results)
+            print(f"✓ 砖型图过滤完成: 通过 {len(matched_results)} 只，剔除 {brick_removed} 只")
+        # ============== 砖型图过滤结束 ==============
         
         print(f"\n✓ 匹配完成: {len(matched_results)} 只股票超过阈值")
         
@@ -937,7 +1221,8 @@ class QuantSystem:
         from strategy.pattern_config import TOP_N_RESULTS
         if matched_results:
             print("\n" + "=" * 60)
-            print(f"📊 Top {TOP_N_RESULTS} B1完美图形匹配结果")
+            mode_label = "成交量倍数排名" if rank_by_vol else f"B1完美图形匹配"
+            print(f"📊 Top {TOP_N_RESULTS} {mode_label}结果")
             print("=" * 60)
             for i, r in enumerate(matched_results[:TOP_N_RESULTS], 1):
                 emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
@@ -946,16 +1231,18 @@ class QuantSystem:
                 heat_change = r.get('industry_heat_change')
                 heat_change_str = f' | 较昨日：{heat_change:+.1f}%' if heat_change is not None else ''
                 print(f"   行业：{r['industry']} | 行业热度：{r['industry_heat']}分{heat_change_str}")
-                print(f"   相似度: {r['similarity_score']}% | 匹配: {r['matched_case']}")
-                # 显示匹配原因/趋势描述
-                if r.get('description'):
-                    print(f"   趋势：{r['description']}")
-
-                bd = r.get('breakdown', {})
-                print(f"   趋势:{bd.get('trend_structure', 0)}% "\
-                      f"KDJ:{bd.get('kdj_state', 0)}% "\
-                      f"量能:{bd.get('volume_pattern', 0)}% "\
-                      f"形态:{bd.get('price_shape', 0)}%")
+                if rank_by_vol:
+                    print(f"   突破量比: {r['key_vol_ratio']}倍")
+                else:
+                    print(f"   相似度: {r['similarity_score']}% | 匹配: {r['matched_case']}")
+                    # 显示匹配原因/趋势描述
+                    if r.get('description'):
+                        print(f"   趋势：{r['description']}")
+                    bd = r.get('breakdown', {})
+                    print(f"   趋势:{bd.get('trend_structure', 0)}% "\
+                          f"KDJ:{bd.get('kdj_state', 0)}% "\
+                          f"量能:{bd.get('volume_pattern', 0)}% "\
+                          f"形态:{bd.get('price_shape', 0)}%")
                 # 显示Z哥规则标注
                 if r.get('zge_triggered_rules'):
                     rules_str = "|".join(r['zge_triggered_rules'])
@@ -983,10 +1270,10 @@ class QuantSystem:
             category=category,
             max_stocks=max_stocks,
             min_similarity=min_similarity,
-            lookback_days=lookback_days,
             M_days=M_days,
             use_cache=use_cache,
-            filter_zge_risk=filter_zge_risk
+            filter_zge_risk=filter_zge_risk,
+            rank_by_vol=rank_by_vol
         )
         
         return {
@@ -1028,13 +1315,7 @@ class QuantSystem:
         min_similarity = kwargs.get('min_similarity')
         if min_similarity is not None and min_similarity != 60.0:
             param_parts.append(f'sim_{int(min_similarity)}')
-        
-        # 添加回看天数参数
-        lookback_days = kwargs.get('lookback_days')
-        from strategy.pattern_config import DEFAULT_LOOKBACK_DAYS
-        if lookback_days is not None and lookback_days != DEFAULT_LOOKBACK_DAYS:
-            param_parts.append(f'look_{lookback_days}')
-        
+
         # 添加M天数参数
         M_days = kwargs.get('M_days')
         if M_days:
@@ -1070,7 +1351,6 @@ class QuantSystem:
                 'category': kwargs.get('category', 'all'),
                 'max_stocks': kwargs.get('max_stocks'),
                 'min_similarity': kwargs.get('min_similarity'),
-                'lookback_days': kwargs.get('lookback_days'),
                 'M_days': kwargs.get('M_days'),
                 'pick_date': kwargs.get('pick_date'),
                 'use_cache': kwargs.get('use_cache', True)
@@ -1080,34 +1360,43 @@ class QuantSystem:
         }
         
         # Top 结果（带行业热度）
+        rank_by_vol = kwargs.get('rank_by_vol', False)
         for i, r in enumerate(matched_results[:10], 1):
-            save_data['top_results'].append({
+            item = {
                 'rank': i,
                 'code': r['stock_code'],
                 'name': r['stock_name'],
                 'industry': r['industry'],
                 'industry_heat': r['industry_heat'],
                 'industry_heat_change': r.get('industry_heat_change'),
-                'similarity_score': r['similarity_score'],
-                'matched_case': r['matched_case'],
-                'description': r.get('description', ''),
-                'breakdown': r.get('breakdown', {})
-            })
+            }
+            if rank_by_vol:
+                item['key_vol_ratio'] = r.get('key_vol_ratio', 0)
+            else:
+                item['similarity_score'] = r['similarity_score']
+                item['matched_case'] = r['matched_case']
+                item['description'] = r.get('description', '')
+                item['breakdown'] = r.get('breakdown', {})
+            save_data['top_results'].append(item)
 
         # 所有匹配结果（只保留前10名）
         for r in matched_results[:10]:
-            save_data['all_results'].append({
+            item = {
                 'code': r['stock_code'],
                 'name': r['stock_name'],
                 'industry': r['industry'],
                 'industry_heat': r['industry_heat'],
                 'industry_heat_change': r.get('industry_heat_change'),
-                'similarity_score': r['similarity_score'],
-                'matched_case': r['matched_case'],
                 'signal_type': r.get('signal_type', ''),
                 'price': r.get('close', 0),
                 'j_value': r.get('J', 0)
-            })
+            }
+            if rank_by_vol:
+                item['key_vol_ratio'] = r.get('key_vol_ratio', 0)
+            else:
+                item['similarity_score'] = r['similarity_score']
+                item['matched_case'] = r['matched_case']
+            save_data['all_results'].append(item)
         
         # 保存到文件
         with open(output_file, 'w', encoding='utf-8') as f:
@@ -1115,15 +1404,15 @@ class QuantSystem:
         
         print(f"\n✅ 结果已保存到: {output_file.resolve()}")
     
-    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, lookback_days=35, M_days=None, pick_date=None, use_cache=False, force_update=False, filter_zge_risk=False):
+    def run_with_b1_match(self, category='all', max_stocks=None, min_similarity=60.0, M_days=None, pick_date=None, use_cache=False, force_update=False, filter_zge_risk=False, b1plus=False, rank_by_vol=False, brick_filter=False):
         """
-        完整流程：更新 + 选股 + B1完美图形匹配 + 通知
+        完整流程：更新 + 选股 + B1/B1Plus完美图形匹配 + 通知
 
         Args:
             category: 股票分类筛选
             max_stocks: 限制处理的股票数量
             min_similarity: 最小相似度阈值
-            lookback_days: 回看天数，默认35天
+            b1plus: 是否同时执行 B1Plus 流程
         """
         from datetime import datetime
 
@@ -1131,26 +1420,48 @@ class QuantSystem:
         print("🚀 执行完整流程（含B1完美图形匹配）")
         if max_stocks:
             print(f"   快速测试模式：只处理前 {max_stocks} 只股票")
-        print(f"   回看天数: {lookback_days}天")
+        if b1plus:
+            print("   B1Plus: 启用（上涨中震荡平台整理型）")
         print("=" * 60)
 
-        # 1. 更新数据（use_cache=True 时跳过，依赖已有数据）
-        if use_cache:
-            print("  [use_cache=True] 跳过数据更新，依赖本地已有数据")
-        else:
-            self._smart_update(max_stocks=max_stocks, force_update=force_update)
+        # 1. 更新数据（_smart_update 内部会检查本地数据是否已最新）
+        self._smart_update(max_stocks=max_stocks, force_update=force_update)
 
         # 2. 选股 + B1完美图形匹配
         match_result = self.select_with_b1_match(
             category=category,
             max_stocks=max_stocks,
             use_cache=use_cache, force_update=force_update,
-            min_similarity=min_similarity,  # 修复错误的变量名
-            lookback_days=lookback_days,
+            min_similarity=min_similarity,
             M_days=M_days,
             pick_date=pick_date,
-            filter_zge_risk=filter_zge_risk
+            filter_zge_risk=filter_zge_risk,
+            rank_by_vol=rank_by_vol,
+            brick_filter=brick_filter,
         )
+
+        # 3. B1Plus 选股 + 匹配（如果启用）
+        b1plus_result = None
+        if b1plus:
+            from strategy.pattern_config import B1PLUS_PERFECT_CASES, B1PLUS_SIMILARITY_WEIGHTS
+            from pathlib import Path as _Path
+
+            b1plus_cache = _Path(__file__).parent / 'data' / 'cache' / 'b1plus_pattern_library_cache.json'
+            b1plus_result = self.select_with_b1_match(
+                category=category,
+                max_stocks=max_stocks,
+                use_cache=use_cache, force_update=force_update,
+                min_similarity=min_similarity,
+                M_days=M_days,
+                pick_date=pick_date,
+                filter_zge_risk=filter_zge_risk,
+                skip_kdj=True,
+                cases_list=B1PLUS_PERFECT_CASES,
+                weights=B1PLUS_SIMILARITY_WEIGHTS,
+                cache_file=b1plus_cache,
+                label='B1Plus',
+                brick_filter=brick_filter,
+            )
         
         # 3. 发送通知（暂时禁用）
         # if match_result.get('matched'):
@@ -1163,7 +1474,10 @@ class QuantSystem:
         # else:
         #     print("\n⚠️ 没有匹配结果，跳过通知")
 
-        return match_result
+        result = {'b1': match_result}
+        if b1plus_result is not None:
+            result['b1plus'] = b1plus_result
+        return result
     
     def run_schedule(self):
         """启动定时调度"""
@@ -1200,7 +1514,8 @@ def print_version():
     print(f"akshare: {akshare.__version__}")
     print(f"pandas: {pandas.__version__}")
     print(f"System: {platform.system()}")
-    print(f"B1 Pattern Match: 支持（基于双线+量比+形态三维匹配，10个历史案例）")
+    print(f"B1 Pattern Match: 支持（基于双线+量比+形态三维匹配，10个历史案例，需 --b1-match 开启）")
+    print(f"B1Plus Pattern Match: 支持（上涨中震荡平台整理型，跳过KDJ，2个历史案例，需 --b1-match --b1plus-match 开启）")
 
 
 def main():
@@ -1221,9 +1536,9 @@ def main():
   --M-days N       - 碗口反弹策略的回溯天数 M
 
 B1 完美图形匹配参数:
-  --no-b1-match    - 禁用 B1 完美图形匹配排序（默认启用）
+  --b1-match       - 启用 B1 完美图形匹配排序（默认禁用）
+  --b1plus-match   - 启用 B1Plus 完美图形匹配（上涨中震荡平台整理型，跳过KDJ过滤）
   --min-similarity N - B1 匹配的最小相似度阈值 (默认：60，范围 0-100)
-  --lookback-days N  - B1 匹配的回看天数 (默认：25)
 
 数据缓存参数:
   --force          - 强制从网络拉取最新数据，忽略缓存（等同于 --no-cache）
@@ -1242,13 +1557,12 @@ Web 服务器参数:
 
 示例:
   python main.py init                          # 首次抓取 6 年历史数据
-  python main.py run                           # 完整流程（更新 + 选股 + 通知+B1 完美图形匹配排序）
+  python main.py run                           # 完整流程（更新 + 选股 + 通知，不含B1匹配）
   python main.py run --force                   # 强制更新数据并执行选股（获取当日数据）
-  python main.py run --no-b1-match             # 完整流程（禁用 B1 匹配，仅普通选股）
+  python main.py run --b1-match                # 完整流程（启用 B1 完美图形匹配排序）
   python main.py run --max-stocks 100          # 只处理前 100 只股票（快速测试）
   python main.py run --category bowl_center    # 只筛选"回落碗中"分类的股票
-  python main.py run --min-similarity 70       # 提高 B1 匹配相似度阈值到 70%
-  python main.py run --lookback-days 30        # B1 匹配使用 30 天回看期
+  python main.py run --b1-match --min-similarity 70  # 启用B1匹配，相似度阈值70%
   python main.py run --M-days 20               # 碗口反弹策略使用 20 天回溯期
   python main.py run --pick-date 2026-03-25    # 回测指定日期的选股结果
   python main.py run --no-notify --no-chart    # 不发送通知和图表，仅控制台输出
@@ -1264,9 +1578,17 @@ Web 服务器参数:
 
 B1 完美图形匹配:
   基于 10 个历史成功案例（双线 + 量比 + 形态三维相似度匹配）
-  **默认自动启用**，使用 --no-b1-match 参数禁用
-  --lookback-days 调整回看天数（默认 25 天）
+  **默认不启用**，使用 --b1-match 参数开启
   --min-similarity 调整匹配阈值（默认 60%，范围 0-100）
+  --b1plus-match 启用 B1Plus 匹配（上涨中震荡平台整理型，跳过KDJ过滤，2个历史案例）
+  --rank-by-vol 跳过图形匹配，直接按突破当天成交量倍数排名
+
+砖型图过滤:
+  --brick-filter   启用砖型图三层过滤（形态+知行线+周线），在现有选股基础上叠加，默认关闭
+
+横盘整理选股:
+  --consolidation 启用横盘整理选股模式（高点后整理不破，多空线上升，收盘价在线上）
+  --after-high-only 配合 --consolidation 使用，条件仅检查高点之后（默认检查整个60天窗口）
 
 数据更新说明:
   默认行为：检查.update_cache.json 缓存，避免重复更新
@@ -1323,17 +1645,17 @@ B1 完美图形匹配:
     )
     
     parser.add_argument(
-        '--no-notify',
+        '--notify',
         action='store_true',
         default=False,
-        help='跳过飞书通知发送，仅输出结果到控制台'
+        help='发送飞书通知（默认不发送，仅输出结果到控制台）'
     )
-    
+
     parser.add_argument(
-        '--no-chart',
+        '--chart',
         action='store_true',
         default=False,
-        help='跳过K线图生成和发送，仅输出文本结果'
+        help='生成K线图并发送飞书（需配合 --notify 使用，默认不生成）'
     )
 
     parser.add_argument(
@@ -1354,12 +1676,10 @@ B1 完美图形匹配:
     
     # 从配置读取B1PatternMatch默认值
     try:
-        from strategy.pattern_config import MIN_SIMILARITY_SCORE, DEFAULT_LOOKBACK_DAYS
+        from strategy.pattern_config import MIN_SIMILARITY_SCORE
         default_min_similarity = MIN_SIMILARITY_SCORE
-        default_lookback_days = DEFAULT_LOOKBACK_DAYS
     except:
         default_min_similarity = 60.0
-        default_lookback_days = 40
     
     parser.add_argument(
         '--min-similarity',
@@ -1369,18 +1689,26 @@ B1 完美图形匹配:
     )
     
     parser.add_argument(
-        '--no-b1-match',
-        action='store_false',
+        '--b1-match',
+        action='store_true',
+        default=False,
         dest='b1_match',
-        default=True,
-        help='禁用B1完美图形匹配排序（默认启用）'
+        help='启用B1完美图形匹配排序（默认禁用）'
     )
-    
+
     parser.add_argument(
-        '--lookback-days',
-        type=int,
-        default=None,
-        help=f'B1完美图形匹配的回看天数 (默认: {default_lookback_days})'
+        '--b1plus-match',
+        action='store_true',
+        default=False,
+        dest='b1plus_match',
+        help='启用B1Plus完美图形匹配（上涨中震荡平台整理型，跳过KDJ过滤）'
+    )
+
+    parser.add_argument(
+        '--rank-by-vol',
+        action='store_true',
+        default=False,
+        help='跳过B1图形匹配，按突破当天成交量倍数排名（量比越高排越前）'
     )
     
     parser.add_argument(
@@ -1412,6 +1740,28 @@ B1 完美图形匹配:
         help='开启后从最终选股结果中剔除所有触发Z哥风控规则的股票，默认关闭仅做标注'
     )
 
+    parser.add_argument(
+        '--brick-filter',
+        action='store_true',
+        default=False,
+        dest='brick_filter',
+        help='启用砖型图三层过滤（形态+知行线+周线），在现有选股基础上叠加，默认关闭'
+    )
+
+    parser.add_argument(
+        '--consolidation',
+        action='store_true',
+        default=False,
+        help='横盘整理选股模式：高点后整理不破，多空线上升，收盘价在线上（跳过B1匹配和Z哥过滤）'
+    )
+
+    parser.add_argument(
+        '--after-high-only',
+        action='store_true',
+        default=False,
+        help='配合--consolidation使用：条件2/3/4仅检查高点之后的整理期（默认检查整个60天窗口）'
+    )
+
     args = parser.parse_args()
 
     # 处理 --version 参数
@@ -1428,11 +1778,7 @@ B1 完美图形匹配:
     if args.min_similarity is not None and (args.min_similarity < 0 or args.min_similarity > 100):
         logger.error(f"--min-similarity 参数无效: {args.min_similarity}，必须在0-100范围内")
         sys.exit(1)
-    
-    if args.lookback_days is not None and args.lookback_days <= 0:
-        logger.error(f"--lookback-days 参数无效: {args.lookback_days}，必须大于0")
-        sys.exit(1)
-    
+
     if args.max_stocks is not None and args.max_stocks <= 0:
         logger.error(f"--max-stocks 参数无效: {args.max_stocks}，必须大于0")
         sys.exit(1)
@@ -1460,13 +1806,21 @@ B1 完美图形匹配:
         quant.init_data(max_stocks=args.max_stocks)
     
     elif args.command == 'run':
-        # 原有选股流程（支持B1完美图形匹配）
-        if args.b1_match:
+        if args.consolidation:
+            # 横盘整理选股模式
+            pick_date = args.pick_date
+            quant.run_consolidation(
+                max_stocks=args.max_stocks,
+                notify=args.notify,
+                chart=args.chart,
+                pick_date=pick_date,
+                force_update=args.force_update,
+                after_high_only=args.after_high_only,
+            )
+        elif args.b1_match:
             # 启用B1完美图形匹配
-            # 如果命令行未指定，使用配置文件中的默认值
 
             min_sim = args.min_similarity if args.min_similarity is not None else default_min_similarity
-            lookback = args.lookback_days if args.lookback_days is not None else default_lookback_days
             M_days = args.M_days if args.M_days is not None else None
             pick_date = args.pick_date or datetime.now().strftime('%Y-%m-%d')
             quant.run_with_b1_match(
@@ -1474,21 +1828,24 @@ B1 完美图形匹配:
                 max_stocks=args.max_stocks,
                 use_cache=args.use_cache, force_update=args.force_update,
                 min_similarity=min_sim,
-                lookback_days=lookback,
                 M_days=M_days,
                 pick_date=pick_date,
-                filter_zge_risk=args.filter_zge_risk
+                filter_zge_risk=args.filter_zge_risk,
+                b1plus=args.b1plus_match,
+                rank_by_vol=args.rank_by_vol,
+                brick_filter=args.brick_filter,
             )
         else:
             # 原有选股流程（不带B1匹配）
             M_days = args.M_days if args.M_days is not None else None
             quant.run_full(
-                category=args.category, 
+                category=args.category,
                 max_stocks=args.max_stocks,
-                no_notify=args.no_notify,
-                no_chart=args.no_chart,
+                notify=args.notify,
+                chart=args.chart,
                 M_days=M_days, force_update=args.force_update,
-                filter_zge_risk=args.filter_zge_risk
+                filter_zge_risk=args.filter_zge_risk,
+                brick_filter=args.brick_filter,
             )
     
     elif args.command == 'web':
