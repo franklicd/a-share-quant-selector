@@ -1185,6 +1185,18 @@ class QuantSystem:
 
             # 按相似度排序
             matched_results.sort(key=lambda x: x['similarity_score'], reverse=True)
+
+            # 去重：同一只股票只保留最高相似度的匹配
+            seen_codes = {}
+            deduped = []
+            for r in matched_results:
+                code = r['stock_code']
+                if code not in seen_codes:
+                    seen_codes[code] = True
+                    deduped.append(r)
+            if len(deduped) < len(matched_results):
+                print(f"  去重: {len(matched_results)} → {len(deduped)}（{len(matched_results) - len(deduped)} 只重复）")
+            matched_results = deduped
         
         # ============== Z哥交易规则处理 ==============
         print("\n[Z哥过滤] 开始执行Z哥交易规则标注...")
@@ -1273,7 +1285,21 @@ class QuantSystem:
                 if rank_by_vol:
                     print(f"   突破量比: {r['key_vol_ratio']}倍")
                 else:
-                    print(f"   相似度: {r['similarity_score']}% | 匹配: {r['matched_case']}")
+                    matched_case = r.get('matched_case', '')
+                    matched_date = r.get('matched_date', '')
+                    matched_code = r.get('matched_code', '')
+                    # 从案例库查找 lookback_days
+                    lookback_str = ''
+                    try:
+                        from strategy.pattern_config import B1_PERFECT_CASES
+                        for c in B1_PERFECT_CASES:
+                            if c['name'] == matched_case or c['code'] == matched_code:
+                                lookback_str = f" | 回溯: {c['lookback_days']}d"
+                                break
+                    except:
+                        pass
+                    date_str = f" | 爆发日: {matched_date}" if matched_date else ""
+                    print(f"   相似度: {r['similarity_score']}% | 匹配: {matched_case}{date_str}{lookback_str}")
                     # 显示匹配原因/趋势描述
                     if r.get('description'):
                         print(f"   趋势：{r['description']}")
@@ -1424,8 +1450,8 @@ class QuantSystem:
                 item['breakdown'] = r.get('breakdown', {})
             save_data['top_results'].append(item)
 
-        # 所有匹配结果（只保留前10名）
-        for r in matched_results[:10]:
+        # 所有匹配结果（保留全部被选出的股票）
+        for r in matched_results:
             item = {
                 'code': r['stock_code'],
                 'name': r['stock_name'],
@@ -1559,8 +1585,8 @@ def print_version():
     print(f"akshare: {akshare.__version__}")
     print(f"pandas: {pandas.__version__}")
     print(f"System: {platform.system()}")
-    print(f"B1 Pattern Match: 支持（基于双线+量比+形态三维匹配，10个历史案例，需 --b1-match 开启）")
-    print(f"B1Plus Pattern Match: 支持（上涨中震荡平台整理型，跳过KDJ，2个历史案例，需 --b1-match --b1plus-match 开启）")
+    print(f"B1 Pattern Match: 默认启用（基于双线+量比+形态三维匹配，9个历史案例，按相似度排序推荐）")
+    print(f"B1Plus Pattern Match: 支持（上涨中震荡平台整理型，跳过KDJ，2个历史案例，需 --b1plus-match 开启）")
 
 
 def main():
@@ -1570,7 +1596,7 @@ def main():
         epilog="""
 命令:
   init             - 首次全量抓取历史数据（默认 6 年）
-  run              - 完整流程（数据更新 + 选股 + 通知）
+  run              - 完整流程（数据更新 + 选股 + B1图形匹配排序）
   web              - 启动 Web 服务器
 
 参数:
@@ -1581,7 +1607,7 @@ def main():
   --M-days N       - 碗口反弹策略的回溯天数 M
 
 B1 完美图形匹配参数:
-  --b1-match       - 启用 B1 完美图形匹配排序（默认禁用）
+  --b1-match       - B1完美图形匹配排序（默认启用，按相似度排序推荐）
   --b1plus-match   - 启用 B1Plus 完美图形匹配（上涨中震荡平台整理型，跳过KDJ过滤）
   --min-similarity N - B1 匹配的最小相似度阈值 (默认：60，范围 0-100)
 
@@ -1602,12 +1628,11 @@ Web 服务器参数:
 
 示例:
   python main.py init                          # 首次抓取 6 年历史数据
-  python main.py run                           # 完整流程（更新 + 选股 + 通知，不含B1匹配）
+  python main.py run                           # 完整流程（更新 + 选股 + B1图形匹配排序）
   python main.py run --force                   # 强制更新数据并执行选股（获取当日数据）
-  python main.py run --b1-match                # 完整流程（启用 B1 完美图形匹配排序）
   python main.py run --max-stocks 100          # 只处理前 100 只股票（快速测试）
   python main.py run --category bowl_center    # 只筛选"回落碗中"分类的股票
-  python main.py run --b1-match --min-similarity 70  # 启用B1匹配，相似度阈值70%
+  python main.py run --min-similarity 70       # 相似度阈值70%
   python main.py run --M-days 20               # 碗口反弹策略使用 20 天回溯期
   python main.py run --pick-date 2026-03-25    # 回测指定日期的选股结果
   python main.py run --no-notify --no-chart    # 不发送通知和图表，仅控制台输出
@@ -1622,8 +1647,9 @@ Web 服务器参数:
   near_short_trend - 靠近短期趋势线（±short_pct%，默认 2%）
 
 B1 完美图形匹配:
-  基于 10 个历史成功案例（双线 + 量比 + 形态三维相似度匹配）
-  **默认不启用**，使用 --b1-match 参数开启
+  基于 9 个历史成功案例（双线 + 量比 + 形态三维相似度匹配）
+  默认启用，按相似度从高到低排序推荐
+  同一只股票匹配多个案例时，取最高相似度
   --min-similarity 调整匹配阈值（默认 60%，范围 0-100）
   --b1plus-match 启用 B1Plus 匹配（上涨中震荡平台整理型，跳过KDJ过滤，2个历史案例）
   --rank-by-vol 跳过图形匹配，直接按突破当天成交量倍数排名
@@ -1736,9 +1762,9 @@ B1 完美图形匹配:
     parser.add_argument(
         '--b1-match',
         action='store_true',
-        default=False,
+        default=True,
         dest='b1_match',
-        help='启用B1完美图形匹配排序（默认禁用）'
+        help='B1完美图形匹配排序（默认启用）'
     )
 
     parser.add_argument(
@@ -1862,9 +1888,8 @@ B1 完美图形匹配:
                 force_update=args.force_update,
                 after_high_only=args.after_high_only,
             )
-        elif args.b1_match:
-            # 启用B1完美图形匹配
-
+        else:
+            # 默认：B1完美图形匹配排序
             min_sim = args.min_similarity if args.min_similarity is not None else default_min_similarity
             M_days = args.M_days if args.M_days is not None else None
             pick_date = args.pick_date or datetime.now().strftime('%Y-%m-%d')
@@ -1880,19 +1905,7 @@ B1 完美图形匹配:
                 rank_by_vol=args.rank_by_vol,
                 brick_filter=args.brick_filter,
             )
-        else:
-            # 原有选股流程（不带B1匹配）
-            M_days = args.M_days if args.M_days is not None else None
-            quant.run_full(
-                category=args.category,
-                max_stocks=args.max_stocks,
-                notify=args.notify,
-                chart=args.chart,
-                M_days=M_days, force_update=args.force_update,
-                filter_zge_risk=args.filter_zge_risk,
-                brick_filter=args.brick_filter,
-            )
-    
+
     elif args.command == 'web':
         # 启动Web服务器
         from web_server import run_web_server
